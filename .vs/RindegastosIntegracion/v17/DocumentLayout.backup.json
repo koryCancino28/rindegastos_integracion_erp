@@ -1,0 +1,89 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\api\\modelos\\convertidortextoflexible.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\api\\modelos\\convertidortextoflexible.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\api\\modelos\\modelosapi.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\api\\modelos\\modelosapi.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:129:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ConvertidorTextoFlexible.cs",
+              "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Api\\Modelos\\ConvertidorTextoFlexible.cs",
+              "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Api\\Modelos\\ConvertidorTextoFlexible.cs",
+              "ToolTip": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Api\\Modelos\\ConvertidorTextoFlexible.cs",
+              "RelativeToolTip": "src\\Rindegastos.Worker\\Api\\Modelos\\ConvertidorTextoFlexible.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-02T16:31:50.871Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Program.cs",
+              "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Program.cs",
+              "ToolTip": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Program.cs",
+              "RelativeToolTip": "src\\Rindegastos.Worker\\Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-31T16:56:45.597Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\appsettings.json",
+              "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\appsettings.json",
+              "ToolTip": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\appsettings.json",
+              "RelativeToolTip": "src\\Rindegastos.Worker\\appsettings.json",
+              "ViewState": "AgIAAAMAAAAAAAAAAAAAABkAAAAXAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-08-31T16:21:01.916Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "ModelosApi.cs",
+              "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Api\\Modelos\\ModelosApi.cs",
+              "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Api\\Modelos\\ModelosApi.cs",
+              "ToolTip": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Api\\Modelos\\ModelosApi.cs",
+              "RelativeToolTip": "src\\Rindegastos.Worker\\Api\\Modelos\\ModelosApi.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-31T16:20:56.39Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

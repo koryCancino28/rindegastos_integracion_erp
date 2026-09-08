@@ -1,0 +1,9 @@
+{
+  "//": "Este proyecto necesita SDK .NET 8 o superior y Visual Studio 2022 (MSBuild 17.x).",
+  "//2": "Visual Studio 2019 NO puede compilarlo: su MSBuild 16.11 no soporta .NET 6+.",
+  "sdk": {
+    "version": "8.0.0",
+    "rollForward": "latestMajor",
+    "allowPrerelease": false
+  }
+}
