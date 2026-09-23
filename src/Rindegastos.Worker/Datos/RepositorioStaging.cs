@@ -39,11 +39,6 @@ public sealed class RepositorioStaging
     /// <summary>Inserta el gasto en staging tal como llego de la API, en estado DESCARGADO.</summary>
     public async Task InsertarAsync(GastoApi g, CancellationToken ct)
     {
-        var ruc = g.CampoExtra("Ruc Proveedor");
-        var tipoDoc = g.CampoExtra("Tipo de Documento");
-        var nroDoc = g.CampoExtra("Nro Documento");
-        var centro = g.CampoExtra("Centro de Costos 1");
-
         await using var cn = await _fabrica.AbrirAsync(ct);
         await using var cmd = cn.CreateCommand();
         cmd.CommandText = @"
@@ -61,6 +56,63 @@ VALUES
   @ruc, @tdCode, @tdNombre, @nroDoc,
   @ccCode, @ccNombre,
   @sunatRuc, @sunatRazon, @sunatEstado, @json, @estado);";
+
+        CargarParametros(cmd, g);
+        cmd.Parameters.AddWithValue("@estado", EstadoGasto.Descargado);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Actualiza en staging los gastos que todavia NO se contabilizaron (estados
+    /// 0, 1 y 9) con lo que acaba de devolver la API.
+    ///
+    /// Sin esto, el worker trabajaria para siempre con la primera version del
+    /// gasto: si alguien corrige el RUC o la cuenta en Rindegastos, la correccion
+    /// nunca llegaria. Si el gasto cambio, vuelve a pendiente (estado 0, 0 intentos)
+    /// para que se procese de nuevo con los datos corregidos.
+    ///
+    /// Los estados 2 y 3 no se tocan nunca: ya tienen comprobante en el ERP.
+    /// </summary>
+    /// <returns>Cuantos gastos cambiaron.</returns>
+    public async Task<int> RefrescarPendientesAsync(IEnumerable<GastoApi> gastos, CancellationToken ct)
+    {
+        var cambiados = 0;
+        await using var cn = await _fabrica.AbrirAsync(ct);
+
+        foreach (var g in gastos)
+        {
+            await using var cmd = cn.CreateCommand();
+            cmd.CommandText = @"
+UPDATE dbo.rg_gasto SET
+  rgg_report_id = @report, rgg_user_id = @user, rgg_policy_id = @policy, rgg_status = @status,
+  rgg_supplier = @supplier, rgg_issue_date = @issue,
+  rgg_total = @total, rgg_net_api = @net, rgg_tax_api = @tax, rgg_tax_percentage = @taxPct,
+  rgg_currency = @cur, rgg_exchange_rate = @rate,
+  rgg_category = @cat, rgg_category_code = @catCode, rgg_note = @note, rgg_reimbursable = @reimb,
+  rgg_ruc_proveedor = @ruc, rgg_tipo_doc_code = @tdCode, rgg_tipo_doc_nombre = @tdNombre,
+  rgg_nro_documento = @nroDoc, rgg_centro_costo_code = @ccCode, rgg_centro_costo_nombre = @ccNombre,
+  rgg_sunat_ruc = @sunatRuc, rgg_sunat_razon_social = @sunatRazon, rgg_sunat_doc_estado = @sunatEstado,
+  rgg_json = @json,
+  rgg_estado = 0, rgg_intentos = 0, rgg_ultimo_error = NULL
+WHERE rgg_id = @id
+  AND rgg_estado IN (0, 1, 9)
+  AND (rgg_json IS NULL OR rgg_json <> @json);";
+
+            CargarParametros(cmd, g);
+            if (await cmd.ExecuteNonQueryAsync(ct) > 0) cambiados++;
+        }
+
+        return cambiados;
+    }
+
+    /// <summary>Parametros comunes del insert y del refresco.</summary>
+    private static void CargarParametros(SqlCommand cmd, GastoApi g)
+    {
+        var ruc = g.CampoExtra("Ruc Proveedor");
+        var tipoDoc = g.CampoExtra("Tipo de Documento");
+        var nroDoc = g.CampoExtra("Nro Documento");
+        var centro = g.CampoExtra("Centro de Costos 1");
 
         cmd.Parameters.AddWithValue("@id", g.Id);
         cmd.Parameters.AddWithValue("@report", g.ReportId);
@@ -92,9 +144,6 @@ VALUES
         cmd.Parameters.AddWithValue("@sunatRazon", Val(g.SunatInfo?.BusinessName));
         cmd.Parameters.AddWithValue("@sunatEstado", Val(g.SunatInfo?.DocStatusName));
         cmd.Parameters.AddWithValue("@json", JsonSerializer.Serialize(g));
-        cmd.Parameters.AddWithValue("@estado", EstadoGasto.Descargado);
-
-        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Guarda los codigos y montos resueltos por la homologacion.</summary>

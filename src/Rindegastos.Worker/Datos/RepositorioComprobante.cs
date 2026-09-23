@@ -75,7 +75,7 @@ public sealed class RepositorioComprobante
                 ?? throw new InvalidOperationException("No se pudo recuperar el codigo de la factura recien creada.");
 
             // ---- 2. Documentos asociados (el ERP siempre crea esta fila) ------------
-            await InsertarDocumentosAsociadosAsync(cn, tx, codFactura, g.FechaContabilizacion, ct);
+            await InsertarDocumentosAsociadosAsync(cn, tx, codFactura, g, ct);
 
             // ---- 3. Cabecera del comprobante contable ------------------------------
             var tipoComprobante = g.EsReciboHonorarios
@@ -92,7 +92,8 @@ public sealed class RepositorioComprobante
                 ?? throw new InvalidOperationException("No se pudo recuperar el codigo del comprobante recien creado.");
 
             // Auditoria de la cabecera, igual que hace clsComprobanteContable.
-            await AuditarComprobanteAsync(cn, tx, g, codComprobante, anno, mes,
+            await AuditarComprobanteAsync(cn, tx, g.GlosaCabecera, g.FechaContabilizacion,
+                                          codComprobante, anno, mes,
                                           tipoComprobante, folioComprobante, codUsuario, ct);
 
             // ---- 4. Enlazar factura con comprobante (mfb_cod_referencia) -----------
@@ -110,7 +111,7 @@ public sealed class RepositorioComprobante
                 var codDetalle = await UltimoDetalleAsync(cn, tx, codComprobante, ct);
                 if (codDetalle is not null)
                     await AuditarDetalleAsync(cn, tx, codComprobante, codDetalle.Value,
-                                              linea, origen, codUsuario, ct);
+                                              linea, origen, codUsuario, DescripcionDetalle, ct);
             }
 
             await tx.CommitAsync(ct);
@@ -120,6 +121,146 @@ public sealed class RepositorioComprobante
                 g.IdRindegastos, codFactura, codComprobante, folioComprobante, anno, mes);
 
             return new ResultadoContabilizacion(codFactura, codComprobante, folioComprobante);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Graba el comprobante de una rendicion (planilla de movilidad).
+    ///
+    /// Reproduce la pantalla Contabilidad > Comprobantes > Ingreso de Comprobante
+    /// (wctrComprobanteContable.ascx). Se diferencia del flujo de compras en tres cosas:
+    ///
+    ///   - NO crea factura: la rendicion no tiene documento tributario detras,
+    ///     asi que no se tocan mae_factura_boleta ni sus tablas relacionadas.
+    ///   - El comprobante queda en estado 17 ("Comprobante Abierto") y no en 19.
+    ///     En esa pantalla blnTermina se vuelve True en cada Page_Load, asi que
+    ///     la rama del 19 no se alcanza (ver btnGrabar_Click, lineas 848-854).
+    ///   - La auditoria del detalle dice "Ingresado en Contabilidad", porque la
+    ///     pantalla pasa "Contabilidad" como descripcion (linea 998).
+    ///
+    /// Todo ocurre en una sola transaccion y se valida que cuadre antes de escribir.
+    /// </summary>
+    public async Task<ResultadoContabilizacion> ContabilizarInformeAsync(
+        InformeHomologado inf, IReadOnlyList<LineaDetalle> lineas, int codUsuario, CancellationToken ct)
+    {
+        var totalCargo = lineas.Sum(l => l.CargoSoles);
+        var totalAbono = lineas.Sum(l => l.AbonoSoles);
+        if (Math.Abs(totalCargo - totalAbono) > 0.05m)
+            throw new InvalidOperationException(
+                $"Comprobante descuadrado: cargo {totalCargo:N2} vs abono {totalAbono:N2}.");
+
+        await using var cn = await _fabrica.AbrirAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
+
+        try
+        {
+            var anno = (short)inf.FechaContabilizacion.Year;
+            var mes = (byte)inf.FechaContabilizacion.Month;
+            var tipo = inf.Regla.TipoComprobante;
+
+            // ---- 1. Cabecera del comprobante --------------------------------------
+            var folio = await SiguienteFolioAsync(cn, tx, anno, mes, tipo, ct);
+
+            await InsertarComprobanteCabeceraAsync(
+                cn, tx, inf.FechaContabilizacion, anno, mes, tipo, folio,
+                inf.GlosaCabecera, ConstantesErp.EstadoAuditoriaComprobanteAbierto, ct);
+
+            var codComprobante = await BuscarComprobanteAsync(cn, tx, tipo, folio, anno, mes, ct)
+                ?? throw new InvalidOperationException("No se pudo recuperar el codigo del comprobante recien creado.");
+
+            await AuditarComprobanteAsync(cn, tx, inf.GlosaCabecera, inf.FechaContabilizacion,
+                                          codComprobante, anno, mes, tipo, folio, codUsuario, ct);
+
+            // ---- 2. Lineas: un gasto por linea, mas la contrapartida ---------------
+            foreach (var linea in lineas)
+            {
+                await InsertarDetalleAsync(cn, tx, codComprobante, linea, linea.CodDocumentoOrigen, ct);
+
+                var codDetalle = await UltimoDetalleAsync(cn, tx, codComprobante, ct);
+                if (codDetalle is not null)
+                    await AuditarDetalleAsync(cn, tx, codComprobante, codDetalle.Value,
+                                              linea, linea.CodDocumentoOrigen, codUsuario,
+                                              ConstantesRendicion.AuditoriaDetalle, ct);
+            }
+
+            await tx.CommitAsync(ct);
+
+            _logger.LogInformation(
+                "Informe {IdRg} ({Tipo}) contabilizado. Comprobante {Comprobante} " +
+                "(folio {Folio}/{Anno}-{Mes}), {N} lineas, total {Total:N2}",
+                inf.IdRindegastos, inf.Regla.Nombre, codComprobante, folio, anno, mes,
+                lineas.Count, inf.Total);
+
+            // No hay factura, por eso el primer codigo va en 0.
+            return new ResultadoContabilizacion(0, codComprobante, folio);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Graba la entrega de un fondo como comprobante de transferencia (tipo 19),
+    /// en la misma pantalla de Ingreso de Comprobante:
+    ///
+    ///   1020152  analisis=persona  td=26  num=11092026  cargo  1000.00
+    ///   1041060  analisis=banco    td=55  num=TR-3      abono  1000.00
+    ///
+    /// La glosa y el numero de la linea del banco llevan el folio ("TR-3"), que
+    /// solo se conoce al grabar. Por eso el folio se calcula primero y con el se
+    /// arman las dos lineas, dentro de la misma transaccion.
+    /// </summary>
+    public async Task<ResultadoContabilizacion> ContabilizarFondoAsync(
+        FondoHomologado f, Servicios.ServicioAsientoFondo asiento, int codUsuario, CancellationToken ct)
+    {
+        await using var cn = await _fabrica.AbrirAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
+
+        try
+        {
+            var anno = (short)f.FechaDeposito.Year;
+            var mes = (byte)f.FechaDeposito.Month;
+
+            var folio = await SiguienteFolioAsync(cn, tx, anno, mes, ConstantesFondo.TipoComprobante, ct);
+            var (glosa, lineas) = asiento.Construir(f, folio);
+            var glosaCabecera = glosa.Length > 100 ? glosa[..100] : glosa;
+
+            await InsertarComprobanteCabeceraAsync(
+                cn, tx, f.FechaDeposito, anno, mes, ConstantesFondo.TipoComprobante, folio,
+                glosaCabecera, ConstantesErp.EstadoAuditoriaComprobanteAbierto, ct);
+
+            var codComprobante = await BuscarComprobanteAsync(
+                    cn, tx, ConstantesFondo.TipoComprobante, folio, anno, mes, ct)
+                ?? throw new InvalidOperationException("No se pudo recuperar el codigo del comprobante recien creado.");
+
+            await AuditarComprobanteAsync(cn, tx, glosaCabecera, f.FechaDeposito, codComprobante,
+                                          anno, mes, ConstantesFondo.TipoComprobante, folio, codUsuario, ct);
+
+            foreach (var linea in lineas)
+            {
+                await InsertarDetalleAsync(cn, tx, codComprobante, linea, null, ct);
+
+                var codDetalle = await UltimoDetalleAsync(cn, tx, codComprobante, ct);
+                if (codDetalle is not null)
+                    await AuditarDetalleAsync(cn, tx, codComprobante, codDetalle.Value, linea, null,
+                                              codUsuario, ConstantesRendicion.AuditoriaDetalle, ct);
+            }
+
+            await tx.CommitAsync(ct);
+
+            _logger.LogInformation(
+                "Fondo {IdFondo} deposito {N} contabilizado. Comprobante {Comprobante} (folio {Folio}/{Anno}-{Mes}), " +
+                "{Monto:N2} a la cuenta {Cuenta}: {Glosa}",
+                f.IdFondo, f.Deposito, codComprobante, folio, anno, mes, f.Monto, f.CuentaFondo, glosa);
+
+            return new ResultadoContabilizacion(0, codComprobante, folio);
         }
         catch
         {
@@ -160,11 +301,15 @@ public sealed class RepositorioComprobante
         cmd.Parameters.AddWithValue("@mfb_cod_usuario_21", codUsuario);
         cmd.Parameters.AddWithValue("@mfb_fecha_proceso_22", ahora);
         cmd.Parameters.AddWithValue("@mfb_otros_impuesto_23", 0m);
-        cmd.Parameters.AddWithValue("@mfb_cod_tipo_vinculacion_24", 0);
-        cmd.Parameters.AddWithValue("@mfb_cod_tipo_convenio_doble_25", 0);
-        cmd.Parameters.AddWithValue("@mfb_cod_tipo_exoneraciones_26", 0);
-        cmd.Parameters.AddWithValue("@mfb_cod_tipo_renta_27", 0);
-        cmd.Parameters.AddWithValue("@mfb_cod_tipo_modalidad_servicio_28", 0);
+
+        // Bloque de no domiciliados (A1. T17 a T21). La pantalla solo lo habilita
+        // para el tipo 37; en los demas documentos queda en 0.
+        var nd = g.EsNoDomiciliado;
+        cmd.Parameters.AddWithValue("@mfb_cod_tipo_vinculacion_24", nd ? DatosNoDomiciliado.TipoVinculacion : 0);
+        cmd.Parameters.AddWithValue("@mfb_cod_tipo_convenio_doble_25", nd ? DatosNoDomiciliado.ConvenioDobleTributacion : 0);
+        cmd.Parameters.AddWithValue("@mfb_cod_tipo_exoneraciones_26", nd ? DatosNoDomiciliado.Exoneraciones : 0);
+        cmd.Parameters.AddWithValue("@mfb_cod_tipo_renta_27", nd ? DatosNoDomiciliado.TipoRenta : 0);
+        cmd.Parameters.AddWithValue("@mfb_cod_tipo_modalidad_servicio_28", nd ? DatosNoDomiciliado.ModalidadServicio : 0);
         cmd.Parameters.AddWithValue("@mfb_fecha_modificacion_29", ahora);
 
         await cmd.ExecuteNonQueryAsync(ct);
@@ -201,11 +346,18 @@ WHERE LTRIM(RTRIM(mfb_folio)) = @folio
     /// vacios. Verificado en la BD: 10199 filas de 2026 con ese patron, y las unicas
     /// 9 filas con NULL eran justamente las del worker antes de este cambio.
     /// Se replica el default del ERP para que ningun registro se vea distinto.
+    ///
+    /// Los campos "82" son el bloque Dua de la pantalla (Registro de Compras No
+    /// Domiciliados). Solo se habilitan para el tipo 37; ahi se graban los
+    /// valores de DatosNoDomiciliado, igual que en el registro manual 262038.
     /// </summary>
     private static async Task InsertarDocumentosAsociadosAsync(
-        SqlConnection cn, SqlTransaction tx, int codFactura, DateTime fechaCreacion,
+        SqlConnection cn, SqlTransaction tx, int codFactura, GastoHomologado g,
         CancellationToken ct)
     {
+        var fechaCreacion = g.FechaContabilizacion;
+        var nd = g.EsNoDomiciliado;
+
         await using var cmd = Sp(cn, tx, "sp_Graba_mae_factura_boleta_documentos_asociadosv2");
         cmd.Parameters.AddWithValue("@mfb_cod_factura_boleta", codFactura);
         cmd.Parameters.AddWithValue("@imp_Cons_bolsa_plastico", 0m);
@@ -213,10 +365,11 @@ WHERE LTRIM(RTRIM(mfb_folio)) = @folio
         cmd.Parameters.AddWithValue("@NserieDocAsoc", "");
         cmd.Parameters.AddWithValue("@TipoDocAsoc", (short)0);
         cmd.Parameters.AddWithValue("@FolioDocAsoc", "");
+        // Periodo Dua: el libro de no domiciliados solo usa el anio (ver DatosNoDomiciliado).
         cmd.Parameters.AddWithValue("@FechaDocAsoc82", fechaCreacion);
-        cmd.Parameters.AddWithValue("@NserieDocAsoc82", "");
-        cmd.Parameters.AddWithValue("@TipoDocAsoc82", (short)0);
-        cmd.Parameters.AddWithValue("@FolioDocAsoc82", "");
+        cmd.Parameters.AddWithValue("@NserieDocAsoc82", nd ? DatosNoDomiciliado.SerieDua : "");
+        cmd.Parameters.AddWithValue("@TipoDocAsoc82", nd ? DatosNoDomiciliado.TipoDocDua : (short)0);
+        cmd.Parameters.AddWithValue("@FolioDocAsoc82", nd ? DatosNoDomiciliado.FolioDua : "");
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -237,22 +390,36 @@ WHERE mcm_anno = @anno AND mcm_mes = @mes AND mcm_cod_tipo_comprobante = @tipo;"
         return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)) + 1;
     }
 
-    /// <summary>sp_insert_mae_comprobante_contable_1 (7 parametros).</summary>
-    private static async Task InsertarComprobanteAsync(
+    /// <summary>Cabecera del comprobante de una factura de compra (estado 19).</summary>
+    private static Task InsertarComprobanteAsync(
         SqlConnection cn, SqlTransaction tx, GastoHomologado g,
         short anno, byte mes, short tipo, int folio, CancellationToken ct)
+        => InsertarComprobanteCabeceraAsync(
+            cn, tx, g.FechaContabilizacion, anno, mes, tipo, folio,
+            g.GlosaCabecera, ConstantesErp.EstadoComprobante, ct);
+
+    /// <summary>
+    /// sp_insert_mae_comprobante_contable_1 (7 parametros).
+    /// El estado se recibe porque cada pantalla graba uno distinto: compras deja
+    /// 19 ("Comprobante en Modificacion") e ingreso de comprobante deja 17
+    /// ("Comprobante Abierto").
+    /// </summary>
+    private static async Task InsertarComprobanteCabeceraAsync(
+        SqlConnection cn, SqlTransaction tx, DateTime fechaProceso,
+        short anno, byte mes, short tipo, int folio, string glosaCabecera,
+        short estado, CancellationToken ct)
     {
-        var glosa = g.GlosaCabecera;
+        var glosa = glosaCabecera;
         if (glosa.Length > 100) glosa = glosa[..100];   // mcm_glosa es varchar(100)
 
         await using var cmd = Sp(cn, tx, "sp_insert_mae_comprobante_contable_1");
-        cmd.Parameters.AddWithValue("@mcm_fecha_proceso_1", g.FechaContabilizacion);
+        cmd.Parameters.AddWithValue("@mcm_fecha_proceso_1", fechaProceso);
         cmd.Parameters.AddWithValue("@mcm_anno_2", anno);
         cmd.Parameters.AddWithValue("@mcm_mes_3", mes);
         cmd.Parameters.AddWithValue("@mcm_cod_tipo_comprobante_4", tipo);
         cmd.Parameters.AddWithValue("@mcm_folio_5", folio);
         cmd.Parameters.AddWithValue("@mcm_glosa_6", glosa);
-        cmd.Parameters.AddWithValue("@mcm_cod_estado_global_actual_7", ConstantesErp.EstadoComprobante);
+        cmd.Parameters.AddWithValue("@mcm_cod_estado_global_actual_7", estado);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -334,15 +501,16 @@ WHERE mcm_cod_tipo_comprobante = @tipo AND mcm_folio = @folio
 
     /// <summary>sp_insert_tran_Auditoria_Comprobante_Contable_1 (14 parametros).</summary>
     private static async Task AuditarComprobanteAsync(
-        SqlConnection cn, SqlTransaction tx, GastoHomologado g, int codComprobante,
-        short anno, byte mes, short tipo, int folio, int codUsuario, CancellationToken ct)
+        SqlConnection cn, SqlTransaction tx, string glosaCabecera, DateTime fechaProceso,
+        int codComprobante, short anno, byte mes, short tipo, int folio,
+        int codUsuario, CancellationToken ct)
     {
-        var glosa = g.GlosaCabecera;
+        var glosa = glosaCabecera;
         if (glosa.Length > 100) glosa = glosa[..100];
 
         await using var cmd = Sp(cn, tx, "sp_insert_tran_Auditoria_Comprobante_Contable_1");
         cmd.Parameters.AddWithValue("@tac_nro_cod_comprobante_1", (long)codComprobante);
-        cmd.Parameters.AddWithValue("@tac_fecha_proceso_2", g.FechaContabilizacion);
+        cmd.Parameters.AddWithValue("@tac_fecha_proceso_2", fechaProceso);
         cmd.Parameters.AddWithValue("@tac_anno_3", anno);
         cmd.Parameters.AddWithValue("@tac_mes_4", mes);
         cmd.Parameters.AddWithValue("@tac_cod_tipo_Comprobante_5", tipo);
@@ -374,10 +542,15 @@ WHERE mdco_cod_comprobante_contable = @comp;");
         return r is null or DBNull ? null : Convert.ToInt64(r);
     }
 
-    /// <summary>sp_insert_tran_auditoria_detalle_comprobante_trigger_1 (22 parametros).</summary>
+    /// <summary>
+    /// sp_insert_tran_auditoria_detalle_comprobante_trigger_1 (22 parametros).
+    /// El texto de <paramref name="obs"/> cambia segun la pantalla que graba:
+    /// compras deja "Ingresado en Detalle Por Compras." y el ingreso de
+    /// comprobante deja "Ingresado en Contabilidad".
+    /// </summary>
     private static async Task AuditarDetalleAsync(
         SqlConnection cn, SqlTransaction tx, int codComprobante, long codDetalle,
-        LineaDetalle l, int? origen, int codUsuario, CancellationToken ct)
+        LineaDetalle l, int? origen, int codUsuario, string obs, CancellationToken ct)
     {
         // Ojo: aqui la glosa es varchar(100), no varchar(150) como en el detalle.
         var glosa = l.Glosa.Length > 100 ? l.Glosa[..100] : l.Glosa;
@@ -405,7 +578,7 @@ WHERE mdco_cod_comprobante_contable = @comp;");
         cmd.Parameters.AddWithValue("@tacc_fecha_19", DateTime.Now);
         cmd.Parameters.AddWithValue("@tacc_usuario_20", codUsuario.ToString());
         cmd.Parameters.AddWithValue("@tacc_llamada_21", DBNull.Value);
-        cmd.Parameters.AddWithValue("@tacc_obs_22", DescripcionDetalle);
+        cmd.Parameters.AddWithValue("@tacc_obs_22", obs);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

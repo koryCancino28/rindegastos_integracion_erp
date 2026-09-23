@@ -3,6 +3,22 @@
   "WorkspaceRootPath": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\datos\\repositoriocatalogo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\datos\\repositoriocatalogo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\datos\\repositoriocomprobante.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\datos\\repositoriocomprobante.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\datos\\fabricaconexion.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\datos\\fabricaconexion.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\api\\modelos\\modelosapi.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\api\\modelos\\modelosapi.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\api\\modelos\\convertidortextoflexible.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\api\\modelos\\convertidortextoflexible.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
@@ -13,10 +29,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|c:\\users\\kory.cancino\\documents\\proyectos\\sw_rindegastos\\rindegastosintegracion\\src\\rindegastos.worker\\api\\modelos\\modelosapi.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{4AF34C23-3E56-4B04-A895-8FFB3CDDEDCE}|src\\Rindegastos.Worker\\Rindegastos.Worker.csproj|solutionrelative:src\\rindegastos.worker\\api\\modelos\\modelosapi.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -35,6 +47,43 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
+              "Title": "RepositorioCatalogo.cs",
+              "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Datos\\RepositorioCatalogo.cs",
+              "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Datos\\RepositorioCatalogo.cs",
+              "ToolTip": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Datos\\RepositorioCatalogo.cs",
+              "RelativeToolTip": "src\\Rindegastos.Worker\\Datos\\RepositorioCatalogo.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACQAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-04T14:52:19.116Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "RepositorioComprobante.cs",
+              "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Datos\\RepositorioComprobante.cs",
+              "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Datos\\RepositorioComprobante.cs",
+              "ToolTip": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Datos\\RepositorioComprobante.cs",
+              "RelativeToolTip": "src\\Rindegastos.Worker\\Datos\\RepositorioComprobante.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-04T14:52:16.506Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "FabricaConexion.cs",
+              "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Datos\\FabricaConexion.cs",
+              "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Datos\\FabricaConexion.cs",
+              "ToolTip": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Datos\\FabricaConexion.cs",
+              "RelativeToolTip": "src\\Rindegastos.Worker\\Datos\\FabricaConexion.cs",
+              "ViewState": "AgIAABwAAAAAAAAAAAA5wAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-09-04T14:52:04.023Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
               "Title": "ConvertidorTextoFlexible.cs",
               "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Api\\Modelos\\ConvertidorTextoFlexible.cs",
               "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Api\\Modelos\\ConvertidorTextoFlexible.cs",
@@ -42,12 +91,11 @@
               "RelativeToolTip": "src\\Rindegastos.Worker\\Api\\Modelos\\ConvertidorTextoFlexible.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-09-02T16:31:50.871Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-09-02T16:31:50.871Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 6,
               "Title": "Program.cs",
               "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Program.cs",
               "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Program.cs",
@@ -55,11 +103,12 @@
               "RelativeToolTip": "src\\Rindegastos.Worker\\Program.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-31T16:56:45.597Z"
+              "WhenOpened": "2026-08-31T16:56:45.597Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 5,
               "Title": "appsettings.json",
               "DocumentMoniker": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\appsettings.json",
               "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\appsettings.json",
@@ -77,7 +126,7 @@
               "RelativeDocumentMoniker": "src\\Rindegastos.Worker\\Api\\Modelos\\ModelosApi.cs",
               "ToolTip": "C:\\Users\\kory.cancino\\Documents\\PROYECTOS\\SW_RINDEGASTOS\\RindegastosIntegracion\\src\\Rindegastos.Worker\\Api\\Modelos\\ModelosApi.cs",
               "RelativeToolTip": "src\\Rindegastos.Worker\\Api\\Modelos\\ModelosApi.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAFcAAAAAAAAAAAAuwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-08-31T16:20:56.39Z"
             }

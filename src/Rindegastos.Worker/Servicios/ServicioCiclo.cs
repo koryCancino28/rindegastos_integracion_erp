@@ -27,6 +27,10 @@ public sealed class ServicioCiclo
     private readonly RepositorioComprobante _comprobantes;
     private readonly ServicioHomologacion _homologacion;
     private readonly ServicioAsiento _asiento;
+    private readonly ServicioCicloRendicion _rendiciones;
+    private readonly ServicioCicloFondo _fondos;
+    private readonly ServicioCicloSolicitud _solicitudes;
+    private readonly ServicioProveedor _proveedores;
     private readonly OpcionesIntegracion _opciones;
     private readonly ILogger<ServicioCiclo> _logger;
 
@@ -36,6 +40,10 @@ public sealed class ServicioCiclo
         RepositorioComprobante comprobantes,
         ServicioHomologacion homologacion,
         ServicioAsiento asiento,
+        ServicioCicloRendicion rendiciones,
+        ServicioCicloFondo fondos,
+        ServicioCicloSolicitud solicitudes,
+        ServicioProveedor proveedores,
         IOptions<OpcionesIntegracion> opciones,
         ILogger<ServicioCiclo> logger)
     {
@@ -44,6 +52,10 @@ public sealed class ServicioCiclo
         _comprobantes = comprobantes;
         _homologacion = homologacion;
         _asiento = asiento;
+        _rendiciones = rendiciones;
+        _fondos = fondos;
+        _solicitudes = solicitudes;
+        _proveedores = proveedores;
         _opciones = opciones.Value;
         _logger = logger;
     }
@@ -51,6 +63,9 @@ public sealed class ServicioCiclo
     public async Task EjecutarAsync(CancellationToken ct)
     {
         _logger.LogInformation("===== Inicio de ciclo (SoloLectura = {Modo}) =====", _opciones.SoloLectura);
+
+        // --- Flujo 1: gastos con documento -> factura de compra + comprobante ---
+        _logger.LogInformation("--- Gastos con documento (facturas, boletas, recibos por honorarios) ---");
 
         await ConfirmarPendientesAsync(ct);
         await DescargarAsync(ct);
@@ -66,6 +81,30 @@ public sealed class ServicioCiclo
         {
             await ContabilizarAsync(ct);
             await ConfirmarPendientesAsync(ct);
+        }
+
+        // --- Flujo 2: informes cerrados -> Ingreso de Comprobante ----------------
+        // Va aparte porque la unidad de trabajo es el informe, no el gasto: un
+        // informe con varios gastos produce un solo comprobante. Corre DESPUES
+        // del flujo 1 porque cancela los documentos que este acaba de registrar.
+        if (_opciones.ProcesarRendiciones)
+        {
+            _logger.LogInformation("--- Informes cerrados (rendiciones) -> Ingreso de Comprobante ---");
+            await _rendiciones.EjecutarAsync(ct);
+        }
+
+        // --- Flujo 3: entrega de fondos -> comprobante de transferencia ----------
+        if (_opciones.ProcesarFondos)
+        {
+            _logger.LogInformation("--- Entrega de fondos (cajas chicas) -> Ingreso de Comprobante ---");
+            await _fondos.EjecutarAsync(ct);
+        }
+
+        // --- Flujo 4: solicitudes de fondo aprobadas -> transferencia ------------
+        if (_opciones.ProcesarSolicitudesFondo)
+        {
+            _logger.LogInformation("--- Solicitudes de fondo aprobadas -> Ingreso de Comprobante ---");
+            await _solicitudes.EjecutarAsync(ct);
         }
 
         _logger.LogInformation("===== Fin de ciclo =====");
@@ -107,12 +146,21 @@ public sealed class ServicioCiclo
             return;
         }
 
-        // Si el Id ya esta en staging, se ignora. Es la garantia anti duplicados.
-        var existentes = await _staging.ObtenerIdsExistentesAsync(gastos.Select(g => g.Id), ct);
-        var nuevos = gastos.Where(g => !existentes.Contains(g.Id)).ToList();
+        // Las planillas de movilidad no se contabilizan aqui: van por el flujo de
+        // rendiciones, agrupadas por informe. Si entraran por este flujo fallarian
+        // siempre, porque el tipo de documento "PL" no tiene equivalente en
+        // ref_tipo_documento_contable ni existe como documento de compra.
+        var movilidad = gastos.Count(g => g.EsPlanillaMovilidad);
+        var deCompra = gastos.Where(g => !g.EsPlanillaMovilidad).ToList();
 
-        _logger.LogInformation("Descargados {Total} gastos: {Nuevos} nuevos, {Repetidos} ya conocidos",
-            gastos.Count, nuevos.Count, gastos.Count - nuevos.Count);
+        // Si el Id ya esta en staging, se ignora. Es la garantia anti duplicados.
+        var existentes = await _staging.ObtenerIdsExistentesAsync(deCompra.Select(g => g.Id), ct);
+        var nuevos = deCompra.Where(g => !existentes.Contains(g.Id)).ToList();
+
+        _logger.LogInformation(
+            "Descargados {Total} gastos: {Nuevos} nuevos, {Repetidos} ya conocidos, " +
+            "{Movilidad} de movilidad (van por el flujo de rendiciones)",
+            gastos.Count, nuevos.Count, deCompra.Count - nuevos.Count, movilidad);
 
         foreach (var g in nuevos)
         {
@@ -123,6 +171,27 @@ public sealed class ServicioCiclo
             catch (Exception ex)
             {
                 _logger.LogError(ex, "No se pudo guardar en staging el gasto {Id}", g.Id);
+            }
+        }
+
+        // Los ya conocidos que todavia no se contabilizaron se actualizan con lo
+        // que acaba de mandar la API. Si alguien corrigio el gasto en Rindegastos,
+        // vuelve a pendiente y se procesa con los datos nuevos. No hay riesgo de
+        // duplicar: solo toca los estados 0, 1 y 9, y la API solo devuelve gastos
+        // que aun no estan integrados.
+        var conocidos = deCompra.Where(g => existentes.Contains(g.Id)).ToList();
+        if (conocidos.Count > 0)
+        {
+            try
+            {
+                var cambiados = await _staging.RefrescarPendientesAsync(conocidos, ct);
+                if (cambiados > 0)
+                    _logger.LogInformation(
+                        "{N} gastos pendientes cambiaron en Rindegastos y vuelven a procesarse", cambiados);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "No se pudieron actualizar los gastos pendientes en staging");
             }
         }
     }
@@ -143,6 +212,27 @@ public sealed class ServicioCiclo
             if (gasto is null)
             {
                 await _staging.RegistrarErrorAsync(id, "No se pudo leer el JSON del gasto.", _opciones.MaxIntentos, ct);
+                continue;
+            }
+
+            // Si el proveedor no existe, se da de alta antes de homologar
+            // (solo si SUNAT lo reporta ACTIVO y HABIDO). Si no se puede, el
+            // motivo queda como error del gasto y no se sigue.
+            string? motivoProveedor;
+            try
+            {
+                motivoProveedor = await _proveedores.AsegurarAsync(gasto, _opciones.SoloLectura, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Fallo el alta del proveedor del gasto {Id}", id);
+                motivoProveedor = "No se pudo dar de alta el proveedor: " + ex.Message;
+            }
+
+            if (motivoProveedor is not null)
+            {
+                _logger.LogWarning("Gasto {Id}: {Motivo}", id, motivoProveedor);
+                await _staging.RegistrarErrorAsync(id, motivoProveedor, _opciones.MaxIntentos, ct);
                 continue;
             }
 

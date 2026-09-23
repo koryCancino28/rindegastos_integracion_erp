@@ -56,6 +56,44 @@ public sealed class OpcionesIntegracion
     /// <summary>Si es true, ademas del gasto se marca el informe completo como integrado.</summary>
     public bool MarcarInformeCompleto { get; set; } = false;
 
+    /// <summary>
+    /// Activa el segundo flujo: los informes cerrados (entrega a rendir,
+    /// viaticos, reembolso y caja chica), que entran por el modulo Ingreso de
+    /// Comprobante. Incluye las planillas de movilidad y la cancelacion de las
+    /// facturas, boletas y RxH que ya entraron por Compras.
+    /// Se puede apagar sin tocar el primer flujo.
+    /// </summary>
+    public bool ProcesarRendiciones { get; set; } = true;
+
+    /// <summary>
+    /// Activa el tercer flujo: la entrega de fondos (cajas chicas). Cada deposito
+    /// de un fondo se registra como comprobante de transferencia (tipo 19).
+    /// Solo entran los fondos que traen la cuenta contable en 'Descripcion' y el
+    /// documento de quien lo recibe en 'Codigo'.
+    /// </summary>
+    public bool ProcesarFondos { get; set; } = true;
+
+    /// <summary>
+    /// Activa el cuarto flujo: las solicitudes de fondo aprobadas (viaticos y
+    /// entregas a rendir pedidos por adelantado). Se registran como comprobante
+    /// de transferencia (tipo 19) contra entregas a rendir.
+    /// </summary>
+    public bool ProcesarSolicitudesFondo { get; set; } = true;
+
+    /// <summary>
+    /// Estado del INFORME que se descarga en el flujo de rendiciones.
+    ///
+    /// Cuidado: en informes este campo no significa lo mismo que en gastos.
+    ///   0 = Abierto o En proceso (falta algun aprobador)
+    ///   1 = Cerrado (aprobado por todo el flujo)
+    ///   null = los dos
+    ///
+    /// Va en 1 porque Contabilidad definio que el informe se integra cuando
+    /// termina de aprobarse. Aunque se ponga null, la homologacion igual deja
+    /// esperando cualquier informe que no este cerrado.
+    /// </summary>
+    public int? StatusInforme { get; set; } = 1;
+
     /// <summary>Maximo de reintentos de contabilizacion antes de dejar el gasto en estado ERROR.</summary>
     public int MaxIntentos { get; set; } = 3;
 }

@@ -62,12 +62,34 @@ try
     builder.Services.AddSingleton<FabricaConexion>();
     builder.Services.AddSingleton<RepositorioLog>();
     builder.Services.AddScoped<RepositorioStaging>();
+    builder.Services.AddScoped<RepositorioStagingInforme>();
+    builder.Services.AddScoped<RepositorioStagingFondo>();
+    builder.Services.AddScoped<RepositorioStagingSolicitud>();
     builder.Services.AddScoped<RepositorioCatalogo>();
     builder.Services.AddScoped<RepositorioComprobante>();
+    builder.Services.AddScoped<RepositorioProveedor>();
 
     // ---------------------------------------------------------------- Servicios
+    // Flujo 1: gastos con documento -> factura de compra + comprobante.
+    // ServicioProveedor da de alta el proveedor si no existe (solo ACTIVO y HABIDO).
+    builder.Services.AddScoped<ServicioProveedor>();
     builder.Services.AddScoped<ServicioHomologacion>();
     builder.Services.AddScoped<ServicioAsiento>();
+
+    // Flujo 2: informes cerrados -> comprobante de ingreso.
+    builder.Services.AddScoped<ServicioHomologacionInforme>();
+    builder.Services.AddScoped<ServicioAsientoInforme>();
+    builder.Services.AddScoped<ServicioCicloRendicion>();
+
+    // Flujo 3: entrega de fondos -> comprobante de transferencia.
+    builder.Services.AddScoped<ServicioHomologacionFondo>();
+    builder.Services.AddScoped<ServicioAsientoFondo>();
+    builder.Services.AddScoped<ServicioCicloFondo>();
+
+    // Flujo 4: solicitudes de fondo aprobadas -> comprobante de transferencia.
+    builder.Services.AddScoped<ServicioHomologacionSolicitud>();
+    builder.Services.AddScoped<ServicioCicloSolicitud>();
+
     builder.Services.AddScoped<ServicioCiclo>();
 
     // ---------------------------------------------------------------- Cliente HTTP

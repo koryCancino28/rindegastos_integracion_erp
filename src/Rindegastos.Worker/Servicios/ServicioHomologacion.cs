@@ -52,6 +52,30 @@ public sealed class ServicioHomologacion
         if (g.OriginalAmount <= 0)
             errores.Add($"El monto del gasto (OriginalAmount) es {g.OriginalAmount}: debe ser mayor que cero.");
 
+        // ---- Gasto parcial ---------------------------------------------------------
+        // Cuando la empresa asume solo una parte del documento, Rindegastos manda
+        // en OriginalAmount lo que asume la empresa y en el campo extra
+        // "Monto total" el total real. La diferencia se le cobra al trabajador.
+        //   Ejemplo real (factura E001-3527):
+        //     OriginalAmount 30.00   Monto total 36.00   al trabajador 6.00
+        var montoEmpresa = g.OriginalAmount;
+        var montoTotal = g.OriginalAmount;
+
+        if (g.EsGastoParcial)
+        {
+            var totalDocumento = g.MontoTotalDocumento;
+
+            if (totalDocumento is null)
+                errores.Add("El gasto esta marcado como parcial pero el campo extra " +
+                            "'Monto total' llego vacio o no es un numero. Sin el no se sabe " +
+                            "cuanto del documento se le cobra al trabajador.");
+            else if (totalDocumento.Value < g.OriginalAmount)
+                errores.Add($"El gasto es parcial pero el 'Monto total' ({totalDocumento:N2}) es menor " +
+                            $"que lo que asume la empresa ({g.OriginalAmount:N2}). Debe ser mayor o igual.");
+            else
+                montoTotal = totalDocumento.Value;
+        }
+
         if (errores.Count > 0) return new ResultadoHomologacion { Errores = errores };
 
         // ---- Proveedor -------------------------------------------------------------
@@ -71,6 +95,14 @@ public sealed class ServicioHomologacion
         if (codTipoDoc is null)
             errores.Add($"El tipo de documento '{tipoDocCode}' no tiene equivalencia. " +
                         $"Agregar una fila en rg_homologacion con rgh_tipo='TIPO_DOCUMENTO'.");
+
+        // Si el gasto dice que es factura no domiciliada, el tipo tiene que ser el
+        // 37. Si no, se registraria como un documento nacional y quedaria fuera del
+        // Registro de Compras No Domiciliados.
+        else if (g.DiceNoDomiciliada && codTipoDoc != ConstantesErp.TipoDocNoDomiciliado)
+            errores.Add($"El gasto dice '¿Es factura no domiciliada? = Si', pero su tipo de documento " +
+                        $"'{tipoDocCode}' corresponde al tipo {codTipoDoc} del ERP y no al 37 " +
+                        $"(Comprobante no domiciliado). Corregir el tipo de documento en Rindegastos.");
 
         // ---- Moneda y tipo de cambio -----------------------------------------------
         // Se usa OriginalCurrency por el mismo motivo que OriginalAmount: Currency
@@ -134,8 +166,50 @@ public sealed class ServicioHomologacion
         if (errores.Count > 0) return new ResultadoHomologacion { Errores = errores };
 
         // ---- Montos ----------------------------------------------------------------
-        var tasaIgv = await _catalogo.ObtenerTasaIgvAsync(ct);
-        var (neto, igv, exento) = CalcularMontos(codTipoDoc!.Value, g.OriginalAmount, tasaIgv);
+        // La tasa de IGV es la que eligio quien rindio el gasto en Rindegastos, no
+        // la del parametro del ERP: hay facturas con 10.5% (gasto 79222741) y el
+        // documento manda. Si el gasto no trae tasa, se usa la del ERP.
+        var tasaErp = await _catalogo.ObtenerTasaIgvAsync(ct);
+        var tasaRindegastos = g.Taxes?.Porcentaje;
+        var tasaIgv = tasaRindegastos ?? tasaErp;
+
+        var (neto, igv, exento) = CalcularMontos(codTipoDoc!.Value, montoTotal, montoEmpresa, tasaIgv);
+
+        if (codTipoDoc == ConstantesErp.TipoDocFactura)
+        {
+            if (tasaRindegastos is null)
+                _logger.LogWarning(
+                    "Gasto {Id}: la factura no trae tasa de IGV en Taxes; se usa la del ERP ({Tasa}%).",
+                    g.Id, tasaErp);
+            else if (tasaRindegastos != tasaErp)
+                _logger.LogInformation(
+                    "Gasto {Id}: la factura lleva {Tasa}% de IGV segun Rindegastos ('{Nombre}'), " +
+                    "no el {TasaErp}% del ERP.",
+                    g.Id, tasaRindegastos, g.Taxes?.taxName, tasaErp);
+
+            // El IGV calculado tiene que coincidir con el que muestra Rindegastos,
+            // pero solo se compara cuando los montos que manda son coherentes:
+            // Net + taxAmount tiene que dar el monto del gasto. Hay gastos donde
+            // quedaron desactualizados porque el monto se corrigio despues (el
+            // 78988720 manda 57.04 + 10.26 para un gasto de 20.00).
+            //
+            // En un gasto parcial tampoco se comparan: ahi Net y taxAmount son
+            // del documento completo y el ERP desagrega solo la parte de la empresa.
+            var netoRindegastos = g.Net;
+            var igvRindegastos = g.Taxes?.taxAmount ?? 0m;
+            var montosCoherentes = Math.Abs(netoRindegastos + igvRindegastos - g.OriginalAmount) <= 0.05m;
+
+            if (!g.EsGastoParcial && montosCoherentes && Math.Abs(igv - igvRindegastos) > 0.05m)
+                errores.Add($"El IGV calculado ({igv:N2}) no coincide con el que trae Rindegastos " +
+                            $"({igvRindegastos:N2}) para la tasa {tasaIgv}%. Revisar el gasto antes de integrarlo.");
+            else if (!g.EsGastoParcial && !montosCoherentes && igvRindegastos > 0)
+                _logger.LogWarning(
+                    "Gasto {Id}: Rindegastos manda neto {Neto:N2} + IGV {Igv:N2}, que no suman el monto del " +
+                    "gasto ({Total:N2}); se desagrega con la tasa {Tasa}%.",
+                    g.Id, netoRindegastos, igvRindegastos, g.OriginalAmount, tasaIgv);
+        }
+
+        if (errores.Count > 0) return new ResultadoHomologacion { Errores = errores };
 
         var gasto = new GastoHomologado
         {
@@ -154,41 +228,76 @@ public sealed class ServicioHomologacion
             MontoNeto = neto,
             MontoIgv = igv,
             MontoExento = exento,
-            MontoTotal = g.OriginalAmount,
+            MontoTotal = montoTotal,
+            MontoEmpresa = montoEmpresa,
             CodPlanCuentaGasto = cuentaGasto!.CodPlanCuenta,
             CuentaGasto = cuentaGasto.CodigoCuenta,
             CodCentroCosto = codCentroCosto,
-            Glosa = string.IsNullOrWhiteSpace(g.Note) ? $"{proveedor.Value.Nombre} Nº{nroDocumento}" : g.Note!.Trim()
+            Glosa = GlosaDelGasto(g, $"{proveedor.Value.Nombre} Nº{nroDocumento}")
         };
 
         return new ResultadoHomologacion { Gasto = gasto };
     }
 
     /// <summary>
-    /// Reparte el total entre neto, IGV y exento segun el tipo de documento.
+    /// Glosa de la linea del gasto: la nota completa que escribio quien rindio.
     ///
-    ///   Factura                -> se desagrega: neto = total / (1 + tasa), IGV = total - neto
+    /// En un gasto parcial la nota incluye la aclaracion del reparto
+    /// ("... / SOLO SE CONSIDERA S/30.00 DEL TOTAL DE S/36.00") y se deja entera
+    /// a proposito, por pedido de Contabilidad: asi el comprobante explica por si
+    /// solo por que el gasto es menor que el documento.
+    ///
+    /// mdco_glosa acepta 150 caracteres; si la nota es mas larga, el recorte lo
+    /// hace RepositorioComprobante al grabar.
+    /// </summary>
+    /// <param name="respaldo">Glosa a usar si el gasto no trae nota.</param>
+    public static string GlosaDelGasto(GastoApi g, string respaldo)
+        => string.IsNullOrWhiteSpace(g.Note) ? respaldo : g.Note!.Trim();
+
+    /// <summary>
+    /// Reparte el total del documento entre neto, IGV y exento.
+    ///
+    ///   Factura                -> se desagrega: neto = empresa / (1 + tasa), IGV = empresa - neto
     ///   Boleta y Recibo Honor. -> todo va a exento, sin credito fiscal
     ///
+    /// La tasa la decide el gasto en Rindegastos (Taxes.taxPercentage), no el
+    /// parametro del ERP: la factura FAA1-32729996 del gasto 79222741 lleva
+    /// 10.5% y quedaria mal con el 18% (neto 457.63 en vez de 488.69).
+    ///
+    /// En un gasto PARCIAL el neto y el IGV se calculan solo sobre la parte que
+    /// asume la empresa, y lo que se le cobra al trabajador va a exento: sobre
+    /// esa parte no se toma credito fiscal.
+    ///
     /// Verificado contra registros reales del ERP:
-    ///   Factura F003-4254: total 161.07 -> neto 136.50 + IGV 24.57
-    ///   Boleta  0001-5082: total 180.00 -> exento 180.00
+    ///   Factura F003-4254: total 161.07              -> neto 136.50 + IGV 24.57
+    ///   Boleta  0001-5082: total 180.00              -> exento 180.00
+    ///   Factura E001-3527: total 36.00, empresa 30.00 -> neto 25.42 + IGV 4.58 + exento 6.00
+    ///   Boleta  B001-2020: total 180.00, empresa 100.00 -> exento 180.00
     /// </summary>
+    /// <param name="total">Total del documento.</param>
+    /// <param name="montoEmpresa">
+    /// Parte que asume la empresa. En un gasto normal es igual al total.
+    /// </param>
     public static (decimal Neto, decimal Igv, decimal Exento) CalcularMontos(
-        short codTipoDoc, decimal total, decimal tasaIgv)
+        short codTipoDoc, decimal total, decimal montoEmpresa, decimal tasaIgv)
     {
+        // Boleta y recibo por honorarios no dan credito fiscal: todo el documento
+        // va a exento, tambien cuando es parcial (verificado en la boleta B001-2020,
+        // donde el exento es el total y no solo la parte de la empresa).
         if (codTipoDoc != ConstantesErp.TipoDocFactura)
             return (0m, 0m, total);
 
         var factor = 1m + (tasaIgv / 100m);
-        var neto = Math.Round(total / factor, 2, MidpointRounding.AwayFromZero);
+        var neto = Math.Round(montoEmpresa / factor, 2, MidpointRounding.AwayFromZero);
         var igv = Math.Round(neto * (tasaIgv / 100m), 2, MidpointRounding.AwayFromZero);
 
-        // El ERP exige que neto + IGV = total. Si el redondeo deja centimos,
-        // se ajustan en el IGV, que es como queda en los comprobantes reales.
-        var diferencia = total - (neto + igv);
+        // El ERP exige que neto + IGV = lo que asume la empresa. Si el redondeo
+        // deja centimos, se ajustan en el IGV, que es como queda en los
+        // comprobantes reales.
+        var diferencia = montoEmpresa - (neto + igv);
         if (diferencia != 0) igv += diferencia;
 
-        return (neto, igv, 0m);
+        // Lo que no asume la empresa queda exento. En un gasto normal da cero.
+        return (neto, igv, total - montoEmpresa);
     }
 }

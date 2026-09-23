@@ -22,24 +22,24 @@
 
 -- A0. LA CONSULTA DEL DIA A DIA: todos los gastos, uno por fila, con su estado
 --     en texto. Si solo vas a usar una consulta de este archivo, usa esta.
-SELECT
-    rgg_id AS id_rindegastos,
-    CASE rgg_estado
-        WHEN 0 THEN '0 - Descargado'
-        WHEN 1 THEN '1 - Listo para contabilizar'
-        WHEN 2 THEN '2 - Contabilizado, sin confirmar'
-        WHEN 3 THEN '3 - Terminado'
-        WHEN 9 THEN '9 - ERROR'
-    END                      AS estado,
-    rgg_supplier             AS proveedor,
-    rgg_nro_documento        AS documento,
-    rgg_issue_date           AS fecha_emision,
-    rgg_total                AS total,
-    rgg_cod_factura_boleta   AS factura_erp,
-    rgg_cod_comprobante      AS comprobante_erp,
-    rgg_ultimo_error         AS motivo_si_fallo
-FROM dbo.rg_gasto
-ORDER BY rgg_estado, rgg_fecha_descarga DESC;
+        SELECT
+            rgg_id AS id_rindegastos,
+            CASE rgg_estado
+                WHEN 0 THEN '0 - Descargado'
+                WHEN 1 THEN '1 - Listo para contabilizar'
+                WHEN 2 THEN '2 - Contabilizado, sin confirmar'
+                WHEN 3 THEN '3 - Terminado'
+                WHEN 9 THEN '9 - ERROR'
+            END                      AS estado,
+            rgg_supplier             AS proveedor,
+            rgg_nro_documento        AS documento,
+            rgg_issue_date           AS fecha_emision,
+            rgg_total                AS total,
+            rgg_cod_factura_boleta   AS factura_erp,
+            rgg_cod_comprobante      AS comprobante_erp,
+            rgg_ultimo_error         AS motivo_si_fallo
+        FROM dbo.rg_gasto
+        ORDER BY rgg_estado, rgg_fecha_descarga DESC;
 
 
 -- A1. Cuantos gastos hay en cada estado.
@@ -73,6 +73,35 @@ SELECT
     MAX(rgg_cod_comprobante) AS ultimo_comprobante
 FROM dbo.rg_gasto
 WHERE CAST(rgg_fecha_contabilizado AS DATE) = CAST(GETDATE() AS DATE);
+
+
+-- A3. LOS CUATRO FLUJOS EN UNA SOLA CONSULTA: cuanto hay en cada estado.
+--     Es la foto general. Para el detalle de cada uno:
+--       gastos       -> A0, B1        (rg_gasto,           seccion A y B)
+--       informes     -> L0, L2, L2b   (rg_informe,         seccion L)
+--       fondos       -> M0, M1        (rg_fondo,           seccion M)
+--       solicitudes  -> S0, S1        (rg_solicitud_fondo, seccion S)
+SELECT flujo, estado, registros, monto FROM (
+    SELECT '1 gastos' AS flujo, rgg_estado AS cod, COUNT(*) AS registros, SUM(rgg_total) AS monto
+    FROM dbo.rg_gasto GROUP BY rgg_estado
+    UNION ALL
+    SELECT '2 informes', rgi_estado, COUNT(*), SUM(rgi_total)
+    FROM dbo.rg_informe GROUP BY rgi_estado
+    UNION ALL
+    SELECT '3 fondos', rgf_estado, COUNT(*), SUM(rgf_monto)
+    FROM dbo.rg_fondo GROUP BY rgf_estado
+    UNION ALL
+    SELECT '4 solicitudes de fondo', rgs_estado, COUNT(*), SUM(rgs_monto)
+    FROM dbo.rg_solicitud_fondo GROUP BY rgs_estado
+) x
+CROSS APPLY (SELECT CASE x.cod
+        WHEN 0 THEN '0 DESCARGADO     guardado, el ERP no se toco'
+        WHEN 1 THEN '1 HOMOLOGADO     los codigos del ERP resolvieron bien'
+        WHEN 2 THEN '2 CONTABILIZADO  ya esta en el ERP, falta avisar a Rindegastos'
+        WHEN 3 THEN '3 CONFIRMADO     Rindegastos acepto la marca: terminado'
+        WHEN 9 THEN '9 ERROR          requiere revision manual'
+        ELSE CAST(x.cod AS varchar(10)) END AS estado) e
+ORDER BY flujo, x.cod;
 
 
 /* =============================================================================
@@ -146,23 +175,48 @@ ORDER BY cantidad DESC;
       Estas 3 consultas son la lista de tareas para Contabilidad.
    ============================================================================= */
 
--- C1. Proveedores que hay que dar de alta.
+-- C1. Proveedores que hay que dar de alta A MANO.
+--     El worker ya crea solo los proveedores que SUNAT reporta ACTIVO y HABIDO.
+--     Los que aparecen aqui son los que NO pudo crear: SUNAT no los reporta asi,
+--     o el gasto no trae la validacion de SUNAT, o el RUC no coincide.
+--     La columna "motivo" dice cual de esos casos es.
 --     Se agrupa SOLO por RUC: el rendidor escribe el nombre libremente en
 --     Rindegastos, asi que el mismo RUC llega con textos distintos.
---     La razon social de SUNAT es la buena para dar de alta el proveedor.
 SELECT
     g.rgg_ruc_proveedor           AS ruc_a_crear,
     MAX(g.rgg_sunat_razon_social) AS razon_social_sunat,
     MAX(g.rgg_supplier)           AS ejemplo_nombre_rindegastos,
     COUNT(*)                      AS gastos_detenidos,
-    SUM(g.rgg_total)              AS monto_detenido
+    SUM(g.rgg_total)              AS monto_detenido,
+    MAX(g.rgg_ultimo_error)       AS motivo
 FROM dbo.rg_gasto g
 LEFT JOIN dbo.mae_proveedor p
        ON LTRIM(RTRIM(p.mpr_id)) = LTRIM(RTRIM(g.rgg_ruc_proveedor))
 WHERE p.mpr_cod_proveedor IS NULL
   AND g.rgg_ruc_proveedor IS NOT NULL
+  AND g.rgg_estado IN (0, 1, 9)
 GROUP BY g.rgg_ruc_proveedor
 ORDER BY monto_detenido DESC;
+
+
+-- C1b. Proveedores que el worker dio de alta solo.
+--      Son los que tienen analisis 'PR' y aparecen en un gasto de la integracion,
+--      creados despues de activar esta funcion. Sirve para revisarlos de vez en
+--      cuando (por ejemplo, completar la direccion, que el worker no llena).
+SELECT
+    p.mpr_cod_proveedor   AS cod_proveedor,
+    p.mpr_id              AS ruc,
+    p.mpr_razon_social    AS razon_social,
+    (SELECT STUFF((SELECT ',' + CAST(t.ntp_cod_tipo_proveedor AS varchar(3))
+                   FROM dbo.nub_tipo_proveedor t WHERE t.ntp_cod_proveedor = p.mpr_cod_proveedor
+                   ORDER BY 1 FOR XML PATH('')), 1, 1, ''))   AS tipos,
+    (SELECT COUNT(*) FROM dbo.tran_direccion d
+     WHERE d.tdr_cod_entidad = p.mpr_cod_proveedor)          AS direcciones
+FROM dbo.mae_proveedor p
+WHERE EXISTS (SELECT 1 FROM dbo.rg_gasto g WHERE LTRIM(RTRIM(g.rgg_ruc_proveedor)) = LTRIM(RTRIM(p.mpr_id)))
+  AND EXISTS (SELECT 1 FROM dbo.nub_tipo_proveedor t WHERE t.ntp_cod_proveedor = p.mpr_cod_proveedor AND t.ntp_cod_tipo_proveedor = 1)
+  AND EXISTS (SELECT 1 FROM dbo.nub_tipo_proveedor t WHERE t.ntp_cod_proveedor = p.mpr_cod_proveedor AND t.ntp_cod_tipo_proveedor = 2)
+ORDER BY p.mpr_cod_proveedor DESC;
 
 
 -- C2. Proveedores que existen pero NO tienen analisis contable.
@@ -553,4 +607,498 @@ DECLARE @id BIGINT = 0;
 SELECT rgg_cod_factura_boleta, rgg_cod_comprobante FROM dbo.rg_gasto WHERE rgg_id = @id;
 SELECT * FROM dbo.mae_detalle_comprobante_contable
 WHERE mdco_cod_comprobante_contable = (SELECT rgg_cod_comprobante FROM dbo.rg_gasto WHERE rgg_id = @id);
+*/
+
+
+/* #############################################################################
+   L. INFORMES (rendiciones) -> Ingreso de Comprobante
+
+      Todo lo de arriba es del primer flujo, el de gastos con documento, que
+      trabaja sobre rg_gasto. Este bloque es del segundo flujo, el de los
+      informes, que trabaja sobre rg_informe.
+
+      La diferencia importante al leer los resultados: aqui la unidad es el
+      INFORME. Un informe CERRADO con cinco gastos genera UN comprobante con
+      una linea por gasto mas la contrapartida. Las planillas de movilidad van
+      a la cuenta de gasto; las facturas, boletas y RxH (que ya entraron por
+      compras) van a la cuenta del proveedor, mas 1419010 si son parciales.
+
+      Un informe en estado 0 con ultimo_error 'EN ESPERA: ...' no tiene un
+      problema: espera que se cierre en Rindegastos o que sus documentos
+      terminen de entrar por compras. No gasta reintentos.
+   ############################################################################# */
+
+-- L0. LA CONSULTA DEL DIA A DIA: todos los informes con su estado en texto.
+SELECT
+    i.rgi_id                        AS id_rindegastos,
+    i.rgi_titulo                    AS informe,
+    i.rgi_tipo_rendicion            AS tipo_rendicion,
+    CASE
+        WHEN i.rgi_estado = 0 AND i.rgi_ultimo_error LIKE 'EN ESPERA:%' THEN 'SI'
+        ELSE NULL
+    END                             AS en_espera,
+    CASE i.rgi_estado
+        WHEN 0 THEN '0 DESCARGADO'
+        WHEN 1 THEN '1 HOMOLOGADO'
+        WHEN 2 THEN '2 CONTABILIZADO, sin confirmar en Rindegastos'
+        WHEN 3 THEN '3 CONFIRMADO'
+        WHEN 9 THEN '9 ERROR'
+        ELSE CAST(i.rgi_estado AS varchar(10))
+    END                             AS estado,
+    i.rgi_empleado_nombre           AS envio_el_informe,
+    i.rgi_total                     AS total,
+    i.rgi_cantidad_gastos           AS gastos,
+    i.rgi_numero_documento          AS nro_documento,
+    i.rgi_fecha_vencimiento         AS vence,
+    i.rgi_cod_comprobante           AS comprobante,
+    i.rgi_ultimo_error              AS ultimo_error
+FROM dbo.rg_informe i
+ORDER BY i.rgi_fecha_descarga DESC;
+
+
+-- L1. Cuantos informes hay en cada estado.
+SELECT
+    CASE rgi_estado
+        WHEN 0 THEN '0 DESCARGADO     esta guardado, contabilidad no fue tocada'
+        WHEN 1 THEN '1 HOMOLOGADO     los codigos del ERP resolvieron bien'
+        WHEN 2 THEN '2 CONTABILIZADO  el comprobante ya existe en el ERP'
+        WHEN 3 THEN '3 CONFIRMADO     Rindegastos acepto la marca'
+        WHEN 9 THEN '9 ERROR          requiere revision manual'
+        ELSE CAST(rgi_estado AS varchar(10))
+    END                     AS estado,
+    COUNT(*)                AS informes,
+    SUM(rgi_total)          AS monto_total
+FROM dbo.rg_informe
+GROUP BY rgi_estado
+ORDER BY rgi_estado;
+
+
+-- L2. Informes con problema, con el motivo exacto.
+--     Es la consulta que hay que mirar cuando algo no se integro.
+SELECT
+    rgi_id                  AS id_rindegastos,
+    rgi_titulo              AS informe,
+    rgi_tipo_rendicion      AS tipo_rendicion,
+    rgi_empleado_nombre     AS envio_el_informe,
+    rgi_total               AS total,
+    rgi_intentos            AS intentos,
+    rgi_ultimo_error        AS motivo
+FROM dbo.rg_informe
+WHERE rgi_estado = 9
+ORDER BY rgi_fecha_descarga DESC;
+
+
+-- L2b. Informes EN ESPERA y por que (no son errores).
+--      Motivos tipicos: el informe no esta cerrado en Rindegastos, o una de sus
+--      facturas/boletas/RxH todavia no esta registrada en compras (el motivo
+--      dice si ese gasto esta en error en rg_gasto, ver consultas A0 y B1).
+SELECT
+    rgi_id                  AS id_rindegastos,
+    rgi_titulo              AS informe,
+    rgi_tipo_rendicion      AS tipo_rendicion,
+    rgi_total               AS total,
+    rgi_ultimo_error        AS motivo
+FROM dbo.rg_informe
+WHERE rgi_estado = 0 AND rgi_ultimo_error LIKE 'EN ESPERA:%'
+ORDER BY rgi_fecha_descarga DESC;
+
+
+-- L3. LA CAUSA MAS FRECUENTE: personas que rinden y no estan listas en el ERP.
+--     La contrapartida va a nombre de quien ENVIA el informe (el DNI de su
+--     perfil de Rindegastos) y su cuenta exige analisis contable.
+--     El analisis se busca como en Ingreso de Comprobante: por el documento
+--     (codigo interno), de cualquier tabla (EM empleado, CL cliente, ...).
+SELECT DISTINCT
+    i.rgi_documento_empleado                        AS documento_en_rindegastos,
+    i.rgi_empleado_nombre                           AS nombre_en_rindegastos,
+    e.men_cod_empleado                              AS cod_empleado_erp,
+    LTRIM(RTRIM(ISNULL(e.men_nombres,'') + ' ' +
+                ISNULL(e.men_apellido_paterno,'') + ' ' +
+                ISNULL(e.men_apellido_materno,''))) AS nombre_en_erp,
+    a.tan_cod_analisis                              AS analisis_erp,
+    a.tan_tabla_asociada                            AS tabla_analisis,
+    CASE
+        WHEN a.tan_cod_analisis IS NOT NULL
+            THEN 'OK: ya tiene analisis, el error es otro (ver L2)'
+        WHEN e.men_cod_empleado IS NULL
+            THEN 'FALTA: no existe ningun empleado ni analisis con ese documento'
+        ELSE 'FALTA: el empleado existe pero no hay analisis contable con ese documento'
+    END                                             AS que_falta
+FROM dbo.rg_informe i
+LEFT JOIN dbo.mae_empleado e
+       ON TRY_CAST(LTRIM(RTRIM(e.men_rut)) AS BIGINT)
+        = TRY_CAST(LTRIM(RTRIM(i.rgi_documento_empleado)) AS BIGINT)
+OUTER APPLY (SELECT TOP 1 t.tan_cod_analisis, t.tan_tabla_asociada
+             FROM dbo.tran_analisis t
+             WHERE t.tan_cod_interno_analisis
+                 = TRY_CAST(LTRIM(RTRIM(i.rgi_documento_empleado)) AS BIGINT)
+             ORDER BY t.tan_cod_analisis) a
+WHERE i.rgi_estado = 9
+  AND i.rgi_documento_empleado IS NOT NULL;
+
+
+-- L4. Empleados vigentes SIN analisis contable (de ninguna tabla) con su documento.
+--     Es el trabajo de fondo que hay que hacer para que el flujo no se detenga:
+--     cualquiera de estos que rinda gastos va a fallar.
+SELECT
+    e.men_cod_empleado      AS cod_empleado,
+    e.men_rut               AS documento,
+    LTRIM(RTRIM(ISNULL(e.men_nombres,'') + ' ' +
+                ISNULL(e.men_apellido_paterno,'') + ' ' +
+                ISNULL(e.men_apellido_materno,''))) AS nombre
+FROM dbo.mae_empleado e
+WHERE e.men_vigente = 1
+  AND NOT EXISTS (SELECT 1 FROM dbo.tran_analisis a
+                  WHERE a.tan_cod_interno_analisis
+                      = TRY_CAST(LTRIM(RTRIM(e.men_rut)) AS BIGINT))
+ORDER BY nombre;
+
+
+-- L5. Que se genero por cada informe integrado: el comprobante completo.
+SELECT
+    i.rgi_id                            AS id_rindegastos,
+    i.rgi_titulo                        AS informe,
+    i.rgi_tipo_rendicion                AS tipo_rendicion,
+    tc.rtco_nombre                      AS tipo_comprobante,
+    c.mcm_folio                         AS folio,
+    c.mcm_cod_comprobante_contable      AS comprobante,
+    CONVERT(char(10), c.mcm_fecha_proceso, 120) AS fecha,
+    c.mcm_glosa                         AS glosa,
+    c.mcm_cod_estado_global_actual      AS estado_comprobante,
+    (SELECT COUNT(*) FROM dbo.mae_detalle_comprobante_contable d
+     WHERE d.mdco_cod_comprobante_contable = c.mcm_cod_comprobante_contable) AS lineas,
+    i.rgi_numero_documento              AS nro_contrapartida,
+    i.rgi_cuenta_contrapartida          AS cuenta_contrapartida,
+    i.rgi_total                         AS total
+FROM dbo.rg_informe i
+INNER JOIN dbo.mae_comprobante_contable c
+        ON c.mcm_cod_comprobante_contable = i.rgi_cod_comprobante
+LEFT JOIN dbo.ref_tipo_comprobante tc
+        ON tc.rtco_cod_tipo_comprobante = c.mcm_cod_tipo_comprobante
+ORDER BY c.mcm_cod_comprobante_contable DESC;
+
+
+-- L6. Detalle contable completo de UN informe.
+--     Debe tener una linea por gasto mas la contrapartida.
+DECLARE @id_informe BIGINT = 0;   -- <-- cambiar por el Id del informe
+
+SELECT
+    d.mdco_cod_detalle_comprobante_contable AS linea,
+    pc.mpc_codigo_cuenta            AS cuenta,
+    pc.mpc_nombre                   AS nombre_cuenta,
+    ta.tan_cod_interno_analisis     AS analisis,
+    ta.tan_nombre                   AS nombre_analisis,
+    cc.rcc_nombre_centro_costo      AS centro_costo,
+    d.mdco_cod_tipo_documento_contable AS tipo_doc,
+    d.mdco_numero_documento         AS numero,
+    d.mdco_fecha_vencimiento        AS vence,
+    d.mdco_cargo, d.mdco_abono,
+    d.mdco_cargo_soles, d.mdco_abono_soles,
+    d.mdco_glosa
+FROM dbo.rg_informe i
+INNER JOIN dbo.mae_detalle_comprobante_contable d
+        ON d.mdco_cod_comprobante_contable = i.rgi_cod_comprobante
+LEFT JOIN dbo.mae_plan_cuenta   pc ON pc.mpc_cod_plan_cuenta  = d.mdco_cod_plan_cuenta
+LEFT JOIN dbo.tran_analisis     ta ON ta.tan_cod_analisis     = d.mdco_cod_analisis
+LEFT JOIN dbo.ref_centro_costo  cc ON cc.rcc_cod_centro_costo = d.mdco_cod_centro_costo
+WHERE i.rgi_id = @id_informe
+ORDER BY d.mdco_cod_detalle_comprobante_contable;
+
+
+-- L7. Comprobantes de rendicion que NO cuadran.
+--     Deberia devolver 0 filas siempre. Si devuelve algo, es grave.
+SELECT
+    i.rgi_id                        AS id_rindegastos,
+    i.rgi_cod_comprobante           AS comprobante,
+    SUM(d.mdco_cargo_soles)         AS total_cargo,
+    SUM(d.mdco_abono_soles)         AS total_abono,
+    SUM(d.mdco_cargo_soles) - SUM(d.mdco_abono_soles) AS diferencia
+FROM dbo.rg_informe i
+INNER JOIN dbo.mae_detalle_comprobante_contable d
+        ON d.mdco_cod_comprobante_contable = i.rgi_cod_comprobante
+GROUP BY i.rgi_id, i.rgi_cod_comprobante
+HAVING ABS(SUM(d.mdco_cargo_soles) - SUM(d.mdco_abono_soles)) > 0.05;
+
+
+-- L8. AUDITORIA: cada comprobante de rendicion debe tener 1 fila de cabecera
+--     y una de detalle por linea, igual que un ingreso manual.
+SELECT
+    i.rgi_id                        AS id_rindegastos,
+    i.rgi_cod_comprobante           AS comprobante,
+    (SELECT COUNT(*) FROM dbo.mae_detalle_comprobante_contable d
+     WHERE d.mdco_cod_comprobante_contable = i.rgi_cod_comprobante)        AS lineas,
+    (SELECT COUNT(*) FROM dbo.tran_auditoria_comprobante_contable a
+     WHERE a.tac_nro_cod_comprobante = i.rgi_cod_comprobante)              AS aud_cabecera,
+    (SELECT COUNT(*) FROM dbo.tran_auditoria_detalle_comprobante_trigger t
+     WHERE t.tacc_cod_comprobante_contable = i.rgi_cod_comprobante)        AS aud_detalle,
+    (SELECT TOP 1 a.tac_cod_usuario FROM dbo.tran_auditoria_comprobante_contable a
+     WHERE a.tac_nro_cod_comprobante = i.rgi_cod_comprobante)              AS usuario
+FROM dbo.rg_informe i
+WHERE i.rgi_cod_comprobante IS NOT NULL
+ORDER BY i.rgi_cod_comprobante DESC;
+
+
+-- L9. COMPARACION CON LOS REGISTROS MANUALES.
+--     Pone lado a lado los comprobantes de rendicion que hizo la integracion y
+--     los que Contabilidad ingreso a mano el mismo mes.
+--     Se espera la misma estructura; la unica diferencia legitima es el usuario.
+DECLARE @anno_rend smallint = YEAR(GETDATE());
+DECLARE @mes_rend  tinyint  = MONTH(GETDATE());
+
+SELECT
+    CASE WHEN i.rgi_id IS NULL THEN 'MANUAL' ELSE 'INTEGRACION' END AS origen,
+    c.mcm_cod_comprobante_contable  AS comprobante,
+    tc.rtco_nombre                  AS tipo_comprobante,
+    c.mcm_folio                     AS folio,
+    c.mcm_glosa                     AS glosa,
+    c.mcm_cod_estado_global_actual  AS estado,
+    (SELECT COUNT(*) FROM dbo.mae_detalle_comprobante_contable d
+     WHERE d.mdco_cod_comprobante_contable = c.mcm_cod_comprobante_contable)  AS lineas,
+    (SELECT TOP 1 a.tac_cod_usuario FROM dbo.tran_auditoria_comprobante_contable a
+     WHERE a.tac_nro_cod_comprobante = c.mcm_cod_comprobante_contable)        AS usuario,
+    (SELECT COUNT(*) FROM dbo.tran_auditoria_detalle_comprobante_trigger t
+     WHERE t.tacc_cod_comprobante_contable = c.mcm_cod_comprobante_contable)  AS aud_detalle
+FROM dbo.mae_comprobante_contable c
+LEFT JOIN dbo.rg_informe i ON i.rgi_cod_comprobante = c.mcm_cod_comprobante_contable
+LEFT JOIN dbo.ref_tipo_comprobante tc ON tc.rtco_cod_tipo_comprobante = c.mcm_cod_tipo_comprobante
+WHERE c.mcm_anno = @anno_rend
+  AND c.mcm_mes  = @mes_rend
+  AND c.mcm_cod_tipo_comprobante IN (17, 2)   -- Diario y Caja Egreso
+ORDER BY origen, c.mcm_cod_comprobante_contable;
+
+
+/* L10. VOLVER A PROCESAR UN INFORME que quedo en error, despues de corregir
+        el dato que faltaba (dar de alta al empleado, crear su analisis, etc).
+        Lo devuelve al estado 0 para que el proximo ciclo lo intente de nuevo.
+
+UPDATE dbo.rg_informe
+SET rgi_estado = 0, rgi_intentos = 0, rgi_ultimo_error = NULL
+WHERE rgi_id = 0;   -- <-- cambiar por el Id real
+*/
+
+
+-- L11. CAJA CHICA: en que correlativo va cada persona y cual pondria el worker.
+--      El numero es 'anio-NNNN' y se cuenta POR PERSONA dentro de la cuenta, con
+--      el maximo ya usado + 1 (cuenta lo del worker y lo ingresado a mano).
+--      La persona es la que ENVIA el informe: el DNI de Employee.Identification,
+--      el mismo que va en el analisis de la linea de contrapartida.
+--      Cambiar la cuenta por 4690215 para ver la numeracion en dolares.
+DECLARE @cuenta_cch  varchar(20) = '4690210';
+DECLARE @prefijo_cch varchar(10) = CAST(YEAR(GETDATE()) AS varchar(4)) + '-';
+
+SELECT
+    a.tan_cod_interno_analisis  AS documento,
+    a.tan_nombre                AS persona,
+    MAX(TRY_CAST(SUBSTRING(LTRIM(RTRIM(d.mdco_numero_documento)),
+                           LEN(@prefijo_cch) + 1, 10) AS INT))          AS ultimo_usado,
+    @prefijo_cch + RIGHT('0000' + CAST(
+        ISNULL(MAX(TRY_CAST(SUBSTRING(LTRIM(RTRIM(d.mdco_numero_documento)),
+                                      LEN(@prefijo_cch) + 1, 10) AS INT)), 0) + 1
+        AS varchar(10)), 4)                                             AS siguiente,
+    COUNT(*)                                                            AS lineas_del_anio
+FROM dbo.mae_detalle_comprobante_contable d
+INNER JOIN dbo.mae_plan_cuenta p ON p.mpc_cod_plan_cuenta = d.mdco_cod_plan_cuenta
+INNER JOIN dbo.tran_analisis   a ON a.tan_cod_analisis    = d.mdco_cod_analisis
+WHERE LTRIM(RTRIM(p.mpc_codigo_cuenta)) = @cuenta_cch
+  AND LTRIM(RTRIM(d.mdco_numero_documento)) LIKE @prefijo_cch + '%'
+GROUP BY a.tan_cod_interno_analisis, a.tan_nombre
+ORDER BY persona;
+
+
+/* #############################################################################
+   M. ENTREGA DE FONDOS -> comprobante de transferencia (tipo 19)
+
+      Tercer flujo, sobre rg_fondo. La unidad es el DEPOSITO: la entrega inicial
+      y cada recarga del fondo son transferencias distintas en el ERP.
+
+      Solo entran los fondos que traen en Rindegastos:
+        Descripcion = la cuenta contable del ERP (por ejemplo 1020152)
+        Codigo      = el documento de quien recibe el fondo
+      Los fondos que nacen de una solicitud aprobada NO entran aqui: los registra
+      el flujo S, que es el que tiene el DNI.
+   ############################################################################# */
+
+-- M0. LA CONSULTA DEL DIA A DIA: todos los depositos con su estado.
+SELECT
+    f.rgf_id_fondo              AS id_fondo,
+    f.rgf_deposito              AS deposito,
+    f.rgf_titulo                AS fondo,
+    f.rgf_code                  AS documento,
+    f.rgf_nombre_corto          AS recibe,
+    f.rgf_descripcion           AS cuenta_en_rindegastos,
+    f.rgf_monto                 AS monto,
+    f.rgf_moneda                AS moneda,
+    f.rgf_fecha_deposito        AS fecha_deposito,
+    CASE f.rgf_estado
+        WHEN 0 THEN '0 DESCARGADO'
+        WHEN 1 THEN '1 HOMOLOGADO'
+        WHEN 2 THEN '2 CONTABILIZADO, sin confirmar en Rindegastos'
+        WHEN 3 THEN '3 CONFIRMADO'
+        WHEN 9 THEN '9 ERROR'
+        ELSE CAST(f.rgf_estado AS varchar(10))
+    END                         AS estado,
+    f.rgf_cod_comprobante       AS comprobante,
+    f.rgf_folio_comprobante     AS folio,
+    f.rgf_ultimo_error          AS ultimo_error
+FROM dbo.rg_fondo f
+ORDER BY f.rgf_fecha_descarga DESC, f.rgf_id_fondo, f.rgf_deposito;
+
+
+-- M1. Depositos con problema, con el motivo exacto.
+--     Lo mas frecuente: la cuenta que pusieron en 'Descripcion' no existe, o la
+--     persona del campo 'Codigo' no tiene analisis contable.
+SELECT rgf_id_fondo, rgf_deposito, rgf_titulo, rgf_code, rgf_descripcion,
+       rgf_monto, rgf_intentos, rgf_ultimo_error
+FROM dbo.rg_fondo
+WHERE rgf_estado = 9
+ORDER BY rgf_fecha_descarga DESC;
+
+
+-- M2. El comprobante completo de un deposito, para revisarlo linea por linea.
+--     Debe tener dos lineas: la cuenta del fondo al cargo y el banco al abono.
+DECLARE @id_fondo bigint = 0;   -- <-- cambiar por el Id del fondo
+DECLARE @dep      smallint = 1;
+
+SELECT
+    c.mcm_cod_comprobante_contable  AS comprobante,
+    tc.rtco_nombre                  AS tipo_comprobante,
+    c.mcm_folio                     AS folio,
+    c.mcm_fecha_proceso             AS fecha,
+    c.mcm_glosa                     AS glosa,
+    pc.mpc_codigo_cuenta            AS cuenta,
+    pc.mpc_nombre                   AS nombre_cuenta,
+    ta.tan_cod_interno_analisis     AS analisis,
+    ta.tan_nombre                   AS nombre_analisis,
+    d.mdco_cod_tipo_documento_contable AS tipo_doc,
+    d.mdco_numero_documento         AS numero,
+    d.mdco_fecha_vencimiento        AS vence,
+    d.mdco_cargo, d.mdco_abono
+FROM dbo.rg_fondo f
+INNER JOIN dbo.mae_comprobante_contable c
+        ON c.mcm_cod_comprobante_contable = f.rgf_cod_comprobante
+INNER JOIN dbo.mae_detalle_comprobante_contable d
+        ON d.mdco_cod_comprobante_contable = c.mcm_cod_comprobante_contable
+LEFT JOIN dbo.mae_plan_cuenta   pc ON pc.mpc_cod_plan_cuenta = d.mdco_cod_plan_cuenta
+LEFT JOIN dbo.tran_analisis     ta ON ta.tan_cod_analisis     = d.mdco_cod_analisis
+LEFT JOIN dbo.ref_tipo_comprobante tc ON tc.rtco_cod_tipo_comprobante = c.mcm_cod_tipo_comprobante
+WHERE f.rgf_id_fondo = @id_fondo AND f.rgf_deposito = @dep
+ORDER BY d.mdco_cod_detalle_comprobante_contable;
+
+
+-- M3. COMPARACION CON LOS REGISTROS MANUALES: transferencias del mes.
+--     El modelo es el comprobante 2606159, que Contabilidad ingreso a mano.
+DECLARE @anno_tr smallint = YEAR(GETDATE());
+DECLARE @mes_tr  tinyint  = MONTH(GETDATE());
+
+SELECT
+    CASE WHEN f.rgf_id_fondo IS NULL AND s.rgs_id IS NULL THEN 'MANUAL'
+         WHEN f.rgf_id_fondo IS NOT NULL THEN 'INTEGRACION (fondo)'
+         ELSE 'INTEGRACION (solicitud)' END AS origen,
+    c.mcm_cod_comprobante_contable  AS comprobante,
+    c.mcm_folio                     AS folio,
+    c.mcm_fecha_proceso             AS fecha,
+    c.mcm_glosa                     AS glosa,
+    c.mcm_cod_estado_global_actual  AS estado,
+    (SELECT COUNT(*) FROM dbo.mae_detalle_comprobante_contable d
+     WHERE d.mdco_cod_comprobante_contable = c.mcm_cod_comprobante_contable)  AS lineas,
+    (SELECT TOP 1 a.tac_cod_usuario FROM dbo.tran_auditoria_comprobante_contable a
+     WHERE a.tac_nro_cod_comprobante = c.mcm_cod_comprobante_contable)        AS usuario
+FROM dbo.mae_comprobante_contable c
+LEFT JOIN dbo.rg_fondo          f ON f.rgf_cod_comprobante = c.mcm_cod_comprobante_contable
+LEFT JOIN dbo.rg_solicitud_fondo s ON s.rgs_cod_comprobante = c.mcm_cod_comprobante_contable
+WHERE c.mcm_anno = @anno_tr
+  AND c.mcm_mes  = @mes_tr
+  AND c.mcm_cod_tipo_comprobante = 19
+ORDER BY origen, c.mcm_cod_comprobante_contable;
+
+
+/* M4. VOLVER A PROCESAR UN DEPOSITO que quedo en error, despues de corregir en
+       Rindegastos la cuenta o el documento, o de crear el analisis en el ERP.
+
+UPDATE dbo.rg_fondo
+SET rgf_estado = 0, rgf_intentos = 0, rgf_ultimo_error = NULL
+WHERE rgf_id_fondo = 0 AND rgf_deposito = 1;   -- <-- cambiar por el fondo real
+*/
+
+
+/* #############################################################################
+   S. SOLICITUDES DE FONDO -> comprobante de transferencia (tipo 19)
+
+      Cuarto flujo, sobre rg_solicitud_fondo. Alguien pide dinero por adelantado
+      (viaticos o entrega a rendir) y, al aprobarse la solicitud, se le
+      transfiere: cargo a entregas a rendir (1413110) y abono al banco.
+
+      Las dos politicas se registran igual. El DNI de quien recibe el dinero
+      viene en el campo extra "DNI" de la solicitud.
+   ############################################################################# */
+
+-- S0. LA CONSULTA DEL DIA A DIA: todas las solicitudes con su estado.
+SELECT
+    s.rgs_id                    AS id_rindegastos,
+    s.rgs_titulo                AS solicitud,
+    s.rgs_politica              AS politica,
+    s.rgs_tipo_rendicion        AS tipo_rendicion,
+    s.rgs_dni                   AS documento,
+    s.rgs_nombre_corto          AS recibe,
+    s.rgs_monto                 AS monto,
+    s.rgs_moneda                AS moneda,
+    s.rgs_fecha_aprobacion      AS aprobada,
+    CASE s.rgs_estado
+        WHEN 0 THEN '0 DESCARGADA'
+        WHEN 1 THEN '1 HOMOLOGADA'
+        WHEN 2 THEN '2 CONTABILIZADA, sin confirmar en Rindegastos'
+        WHEN 3 THEN '3 CONFIRMADA'
+        WHEN 9 THEN '9 ERROR'
+        ELSE CAST(s.rgs_estado AS varchar(10))
+    END                         AS estado,
+    s.rgs_cod_comprobante       AS comprobante,
+    s.rgs_folio_comprobante     AS folio,
+    s.rgs_id_fondo              AS fondo_creado,
+    s.rgs_ultimo_error          AS ultimo_error
+FROM dbo.rg_solicitud_fondo s
+ORDER BY s.rgs_fecha_descarga DESC;
+
+
+-- S1. Solicitudes con problema, con el motivo exacto.
+--     Lo mas frecuente: falta el campo extra "DNI", o esa persona no tiene
+--     analisis contable en el ERP.
+SELECT rgs_id, rgs_titulo, rgs_politica, rgs_dni, rgs_monto, rgs_intentos, rgs_ultimo_error
+FROM dbo.rg_solicitud_fondo
+WHERE rgs_estado = 9
+ORDER BY rgs_fecha_descarga DESC;
+
+
+-- S2. El comprobante completo de una solicitud, linea por linea.
+DECLARE @id_solicitud varchar(40) = '';   -- <-- cambiar por el Id real
+
+SELECT
+    c.mcm_cod_comprobante_contable  AS comprobante,
+    c.mcm_folio                     AS folio,
+    c.mcm_fecha_proceso             AS fecha,
+    c.mcm_glosa                     AS glosa,
+    pc.mpc_codigo_cuenta            AS cuenta,
+    pc.mpc_nombre                   AS nombre_cuenta,
+    ta.tan_cod_interno_analisis     AS analisis,
+    ta.tan_nombre                   AS nombre_analisis,
+    d.mdco_cod_tipo_documento_contable AS tipo_doc,
+    d.mdco_numero_documento         AS numero,
+    d.mdco_fecha_vencimiento        AS vence,
+    d.mdco_cargo, d.mdco_abono
+FROM dbo.rg_solicitud_fondo s
+INNER JOIN dbo.mae_comprobante_contable c
+        ON c.mcm_cod_comprobante_contable = s.rgs_cod_comprobante
+INNER JOIN dbo.mae_detalle_comprobante_contable d
+        ON d.mdco_cod_comprobante_contable = c.mcm_cod_comprobante_contable
+LEFT JOIN dbo.mae_plan_cuenta pc ON pc.mpc_cod_plan_cuenta = d.mdco_cod_plan_cuenta
+LEFT JOIN dbo.tran_analisis   ta ON ta.tan_cod_analisis     = d.mdco_cod_analisis
+WHERE s.rgs_id = @id_solicitud
+ORDER BY d.mdco_cod_detalle_comprobante_contable;
+
+
+/* S3. VOLVER A PROCESAR UNA SOLICITUD que quedo en error, despues de corregir
+       el DNI en Rindegastos o de crear el analisis en el ERP.
+
+UPDATE dbo.rg_solicitud_fondo
+SET rgs_estado = 0, rgs_intentos = 0, rgs_ultimo_error = NULL
+WHERE rgs_id = '';   -- <-- cambiar por el Id real
 */

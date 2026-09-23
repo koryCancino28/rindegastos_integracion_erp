@@ -155,3 +155,4 @@ GROUP BY CASE WHEN mfb_cod_usuario = NNN THEN 'Automatico (Rindegastos)' ELSE 'M
 UPDATE dbo.mae_usuario SET mus_vigente = 0, mus_fec_baja = GETDATE()
 WHERE mus_usuario = 'rindegastos';
 */
+

@@ -71,8 +71,11 @@ public sealed class ServicioAsiento
             Glosa = g.GlosaCabecera
         });
 
-        // ---- Linea 2 (solo Factura): IGV credito fiscal ----------------------------
-        if (g.EsFactura && g.MontoIgv > 0)
+        // ---- Linea 2: IGV credito fiscal ------------------------------------------
+        // La pantalla la genera sola para los tipos de TiposConLineaIgv, AUNQUE EL
+        // IGV SEA CERO. En el comprobante no domiciliado 2606151 queda una linea de
+        // 4011020 con 0.00. Boleta y recibo por honorarios no la llevan.
+        if (g.LlevaLineaIgv)
         {
             var cuentaIgv = await _catalogo.BuscarCuentaAsync(ConstantesErp.CuentaIgv, ct)
                 ?? throw new InvalidOperationException(
@@ -99,8 +102,12 @@ public sealed class ServicioAsiento
 
         // ---- Linea 3: el gasto propiamente dicho -----------------------------------
         // Factura: el cargo es el neto (el IGV ya fue a su propia cuenta).
-        // Boleta y Recibo por Honorarios: el cargo es el total.
-        var montoGasto = g.EsFactura ? g.MontoNeto : g.MontoTotal;
+        // Boleta y Recibo por Honorarios: el cargo es lo que asume la empresa.
+        //
+        // En un gasto normal MontoEmpresa es igual al total, asi que esto no
+        // cambia nada. En uno parcial deja fuera la parte del trabajador, que se
+        // va a su propia linea mas abajo.
+        var montoGasto = g.EsFactura ? g.MontoNeto : g.MontoEmpresa;
 
         var cuentaGasto = await _catalogo.BuscarCuentaAsync(g.CuentaGasto, ct)
             ?? throw new InvalidOperationException(
@@ -122,7 +129,10 @@ public sealed class ServicioAsiento
                 : ConstantesErp.TipoDocSinDocumento,
             NumeroDocumento = cuentaGasto.RequiereNumeroDocumento ? g.Folio : "0",
             FechaVencimiento = cuentaGasto.RequiereFechaVencimiento ? g.FechaVencimiento : null,
-            CodDocumentoOrigen = null,
+            // Misma regla que btnGrabaDetalle (lineas 2013-2018): si la cuenta pide
+            // tipo de documento, la linea queda enlazada a la factura que se esta
+            // ingresando. Las cuentas de gasto de hoy no lo piden, asi que queda vacio.
+            CodDocumentoOrigen = cuentaGasto.RequiereTipoDocumento ? OrigenFacturaNueva : null,
             Cargo = montoGasto,
             Abono = 0m,
             CargoSoles = ASoles(montoGasto, g),
@@ -131,6 +141,48 @@ public sealed class ServicioAsiento
             TipoCambio = g.TipoCambio,
             Glosa = g.Glosa
         });
+
+        // ---- Linea 4 (solo gasto parcial): lo que se le cobra al trabajador --------
+        // Cuando la empresa asume solo una parte del documento, el resto queda
+        // como cuenta por cobrar al personal. Esta linea la agrega el contador a
+        // mano desde la pantalla: no la genera el ERP sola.
+        //
+        // Verificado en la factura E001-3527 (comprobante 2606127):
+        //   4212030  abono 36.00   total del documento
+        //   4011020  cargo  4.58   IGV sobre lo que asume la empresa
+        //   6251010  cargo 25.42   el gasto
+        //   1419010  cargo  6.00   al trabajador   <-- esta linea
+        if (g.EsParcial)
+        {
+            var cuentaPersonal = await _catalogo.BuscarCuentaAsync(
+                ConstantesErp.CuentaPorCobrarPersonal, ct)
+                ?? throw new InvalidOperationException(
+                    $"La cuenta {ConstantesErp.CuentaPorCobrarPersonal} no existe en mae_plan_cuenta.");
+
+            lineas.Add(new LineaDetalle
+            {
+                CodPlanCuenta = cuentaPersonal.CodPlanCuenta,
+                // Esta cuenta si requiere analisis y tipo de documento, y lleva
+                // los mismos del encabezado. No lleva centro de costo.
+                CodAnalisis = g.CodAnalisis,
+                CodCentroCosto = null,
+                CodTipoDocumento = g.CodTipoDocumento,
+                NumeroDocumento = g.Folio,
+                FechaVencimiento = g.FechaVencimiento,
+                // Apunta a la factura, igual que la linea del proveedor. Asi lo deja
+                // la pantalla al agregarla con "Graba Detalle", porque la cuenta pide
+                // tipo de documento. Verificado: 427 de 427 lineas de 1419010 en
+                // compras de 2026 apuntan a su propia factura.
+                CodDocumentoOrigen = OrigenFacturaNueva,
+                Cargo = g.MontoPersonal,
+                Abono = 0m,
+                CargoSoles = ASoles(g.MontoPersonal, g),
+                AbonoSoles = 0m,
+                CodMoneda = g.CodMoneda,
+                TipoCambio = g.TipoCambio,
+                Glosa = g.GlosaCabecera
+            });
+        }
 
         return lineas;
     }

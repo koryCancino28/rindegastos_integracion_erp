@@ -25,7 +25,12 @@ USING (VALUES
     ('TIPO_DOCUMENTO', '07', '6',  'Nota de Credito -> NOTA DE CREDITO CONTABLE'),
     ('TIPO_DOCUMENTO', '08', '13', 'Nota de Debito -> NOTA DEBITO'),
     ('TIPO_DOCUMENTO', '12', '52', 'Ticket -> TICKET'),
-    ('TIPO_DOCUMENTO', '14', '51', 'Recibo Servicios Publicos')
+    ('TIPO_DOCUMENTO', '14', '51', 'Recibo Servicios Publicos'),
+    -- El codigo SUNAT 91 lo comparten tres documentos del ERP (25 Factura de
+    -- exportacion, 32 Factura de importacion, 37 Comprobante no domiciliado).
+    -- Sin esta fila la busqueda directa devolveria el 25, que es incorrecto.
+    -- Rindegastos lo usa para "Comprobante no domiciliado" (registro 262038).
+    ('TIPO_DOCUMENTO', '91', '37', 'Comprobante no domiciliado -> COMPROBANTE NO DOMICILIADO (SUNAT 91)')
 ) AS o (tipo, val_rg, val_erp, glosa)
 ON  d.rgh_tipo = o.tipo AND d.rgh_valor_rg = o.val_rg
 WHEN NOT MATCHED THEN
@@ -92,26 +97,3 @@ FROM dbo.rg_homologacion
 ORDER BY rgh_tipo, rgh_valor_rg;
 GO
 
-
---=========PARA CREAR EL USUARIO DE RINDEGASTOS 
-
-DECLARE @usuario     VARCHAR(50)  = 'rindegastos';
-DECLARE @nombre      VARCHAR(200) = 'INTEGRACION RINDEGASTOS';
-DECLARE @perfil      INT          = 173;  -- ref_perfil 173 = ASISTENTE CONTABLE
-DECLARE @sucursal    TINYINT      = 1;    -- ref_sucursal 1 = Tienda Callao
-
-INSERT INTO dbo.mae_usuario
-(
-    mus_nombre, mus_nom_corto,
-    mus_cod_perfil,           -- ASISTENTE CONTABLE
-    mus_cod_empleado,         -- NULL: no es una persona
-    mus_cod_sucursal_origen,
-    mus_usuario,              -- login (que nunca se va a usar)
-    mus_password,             -- NULL: no puede iniciar sesion
-    mus_pass_cripto,          -- NULL: idem
-    mus_vigente, mus_nivel_acceso, mus_fuera_horario,
-    mus_fec_creacion, mus_email, mus_acceso_hua, mus_tipo_ics
-)
-VALUES
-( @nombre, 'RINDEGASTOS', @perfil, NULL, @sucursal, @usuario,
-  NULL, NULL, 1, 1, 1, GETDATE(), NULL, 0, 1 );
