@@ -85,7 +85,7 @@ public sealed class ServicioCicloRendicion
                 .SelectMany(p => p.IdsGastos.Select(idGasto => new MarcaIntegracion
                 {
                     Id = idGasto,
-                    IntegrationStatus = 1,
+                    IntegrationStatus = ConstantesMarcaIntegracion.Integrado,
                     IntegrationCode = p.Marca.IntegrationCode,
                     IntegrationDate = p.Marca.IntegrationDate
                 }))

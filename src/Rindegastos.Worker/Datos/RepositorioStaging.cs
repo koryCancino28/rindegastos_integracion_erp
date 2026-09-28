@@ -272,7 +272,7 @@ ORDER BY rgg_id;";
             marcas.Add(new MarcaIntegracion
             {
                 Id = rd.GetInt64(0),
-                IntegrationStatus = 1,
+                IntegrationStatus = ConstantesMarcaIntegracion.Integrado,
                 IntegrationCode = rd.GetInt32(1).ToString(),
                 IntegrationDate = fecha.ToString("yyyy-MM-dd")
             });

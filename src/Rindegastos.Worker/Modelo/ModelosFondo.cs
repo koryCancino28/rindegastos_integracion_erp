@@ -122,8 +122,24 @@ public sealed class FondoHomologado
     /// </summary>
     public DateTime FechaDeposito { get; init; }
 
-    /// <summary>Numero de documento de la linea del fondo: ddMMyyyy del deposito.</summary>
-    public string NumeroDocumentoFondo => FechaDeposito.ToString("ddMMyyyy");
+    private readonly string? _numeroDocumento;
+
+    /// <summary>
+    /// Numero de documento de la linea de destino.
+    ///
+    ///   Entrega de un fondo   ddMMyyyy del deposito (2606159: 11092026).
+    ///   Solicitud aprobada    el Id del fondo que crea Rindegastos al aprobarla,
+    ///                         asi la transferencia queda enlazada con el fondo.
+    ///
+    /// Si no se indica, se usa la fecha.
+    /// </summary>
+    public string NumeroDocumentoFondo
+    {
+        get => string.IsNullOrWhiteSpace(_numeroDocumento)
+            ? FechaDeposito.ToString("ddMMyyyy")
+            : _numeroDocumento!;
+        init => _numeroDocumento = value;
+    }
 
     public decimal MontoSoles => CodMoneda == ConstantesErp.MonedaSoles
         ? Monto

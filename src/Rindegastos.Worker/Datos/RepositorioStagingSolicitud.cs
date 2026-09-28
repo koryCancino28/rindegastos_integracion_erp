@@ -174,8 +174,8 @@ WHERE rgs_id = @id;";
             var fecha = rd.IsDBNull(2) ? DateTime.Today : rd.GetDateTime(2);
             marcas.Add(new MarcaIntegracionSolicitud
             {
-                Id = rd.GetString(0),
-                IntegrationStatus = 1,
+                FundRequestId = rd.GetString(0),
+                IntegrationStatus = ConstantesMarcaIntegracion.Integrado,
                 IntegrationCode = rd.GetInt32(1).ToString(),
                 IntegrationDate = fecha.ToString("yyyy-MM-dd")
             });

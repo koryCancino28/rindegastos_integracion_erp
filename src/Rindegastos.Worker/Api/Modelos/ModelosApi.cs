@@ -258,13 +258,26 @@ public sealed class CampoExtraApi
     public string? Code { get; set; }
 }
 
-/// <summary>Cuerpo de PUT /setExpenseIntegrationBulk.</summary>
+/// <summary>
+/// Cuerpo de PUT /setExpenseIntegrationBulk.
+///
+/// OJO CON IntegrationStatus: va como TEXTO ("1"), no como numero. Con numero la
+/// API contesta HTTP 200 con {"statusCode":500,"message":"Internal server error"}
+/// adentro y no marca nada. Verificado el 24/09/2026 contra los cuatro metodos.
+/// </summary>
 public sealed class MarcaIntegracion
 {
     public long Id { get; set; }
-    public int IntegrationStatus { get; set; } = 1;
+    public string IntegrationStatus { get; set; } = ConstantesMarcaIntegracion.Integrado;
     public string IntegrationCode { get; set; } = "";
     public string IntegrationDate { get; set; } = "";
+}
+
+/// <summary>Valores de IntegrationStatus que acepta la API.</summary>
+public static class ConstantesMarcaIntegracion
+{
+    public const string Integrado = "1";
+    public const string NoIntegrado = "0";
 }
 
 // ===========================================================================
@@ -337,7 +350,7 @@ public sealed class EmpleadoApi
 public sealed class MarcaIntegracionInforme
 {
     public long Id { get; set; }
-    public int IntegrationStatus { get; set; } = 1;
+    public string IntegrationStatus { get; set; } = ConstantesMarcaIntegracion.Integrado;
     public string IntegrationCode { get; set; } = "";
     public string IntegrationDate { get; set; } = "";
 }
@@ -424,7 +437,7 @@ public sealed class TransaccionFondoApi
 public sealed class MarcaIntegracionFondo
 {
     public long Id { get; set; }
-    public int IntegrationStatus { get; set; } = 1;
+    public string IntegrationStatus { get; set; } = ConstantesMarcaIntegracion.Integrado;
     public string IntegrationCode { get; set; } = "";
     public string IntegrationDate { get; set; } = "";
 }
@@ -488,11 +501,16 @@ public sealed class SolicitudFondoApi
     public bool Aprobada => string.Equals(Status?.Trim(), "APPROVED", StringComparison.OrdinalIgnoreCase);
 }
 
-/// <summary>Cuerpo de PUT /setFundRequestIntegrationBulk.</summary>
+/// <summary>
+/// Cuerpo de PUT /setFundRequestIntegrationBulk.
+///
+/// Aqui la solicitud NO se identifica con "Id" sino con "FundRequestId": es el
+/// unico de los cuatro metodos que cambia el nombre de la llave.
+/// </summary>
 public sealed class MarcaIntegracionSolicitud
 {
-    public string Id { get; set; } = "";
-    public int IntegrationStatus { get; set; } = 1;
+    public string FundRequestId { get; set; } = "";
+    public string IntegrationStatus { get; set; } = ConstantesMarcaIntegracion.Integrado;
     public string IntegrationCode { get; set; } = "";
     public string IntegrationDate { get; set; } = "";
 }

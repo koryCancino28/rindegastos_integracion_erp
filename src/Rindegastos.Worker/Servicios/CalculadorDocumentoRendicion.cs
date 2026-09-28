@@ -17,10 +17,16 @@ public static class CalculadorDocumentoRendicion
     /// Numero de documento de la contrapartida.
     ///
     ///   Entrega a rendir  ddMMyyyy del dia en que se registra   -> 09092026
-    ///   Viaticos          ddMMyyyy del dia en que se registra   -> 09092026
+    ///                     o el Id del fondo, si el informe rinde uno -> 944229
+    ///   Viaticos          igual que entrega a rendir
     ///   Reembolso         ddMMyyyy del viernes de pago + correlativo de 2 digitos
     ///                     por persona                           -> 1109202601
     ///   Caja chica        anio + correlativo de 4 digitos       -> 2026-0001
+    ///
+    /// El Id del fondo solo reemplaza a la FECHA. Reembolso y caja chica conservan
+    /// su correlativo aunque el informe traiga fondo: en caja chica el numero es
+    /// la secuencia anual de la persona (2606263, liquidacion del fondo 939964,
+    /// quedo con 2026-0003) y en reembolso agrupa los pagos de un mismo viernes.
     /// </summary>
     /// <param name="regla">Tipo de rendicion.</param>
     /// <param name="fechaRegistro">Dia en que se contabiliza.</param>
@@ -29,9 +35,19 @@ public static class CalculadorDocumentoRendicion
     /// Reembolso: cuantos reembolsos lleva esa persona para ese mismo viernes, mas uno.
     /// Caja chica: cuantas liquidaciones lleva el anio, mas uno.
     /// </param>
+    /// <param name="idFondo">
+    /// Fondo que rinde el informe (FundId), si tiene uno. Deja la transferencia que
+    /// entrego el dinero y la rendicion que lo justifica con el mismo numero.
+    /// </param>
     public static string NumeroDocumento(
-        ReglaRendicion regla, DateTime fechaRegistro, DateTime fechaVencimiento, int correlativo)
-        => regla.Tipo switch
+        ReglaRendicion regla, DateTime fechaRegistro, DateTime fechaVencimiento, int correlativo,
+        long? idFondo = null)
+    {
+        if (idFondo is not null and > 0
+            && regla.Tipo is TipoRendicion.EntregaARendir or TipoRendicion.Viaticos)
+            return idFondo.Value.ToString();
+
+        return regla.Tipo switch
         {
             TipoRendicion.EntregaARendir => fechaRegistro.ToString("ddMMyyyy"),
             TipoRendicion.Viaticos       => fechaRegistro.ToString("ddMMyyyy"),
@@ -47,6 +63,7 @@ public static class CalculadorDocumentoRendicion
 
             _ => throw new ArgumentOutOfRangeException(nameof(regla))
         };
+    }
 
     /// <summary>
     /// Fecha de vencimiento de la contrapartida.

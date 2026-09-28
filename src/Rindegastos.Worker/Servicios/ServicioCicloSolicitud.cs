@@ -72,7 +72,7 @@ public sealed class ServicioCicloSolicitud
         try
         {
             await _api.MarcarSolicitudesFondoIntegradasAsync(marcas, ct);
-            await _staging.MarcarConfirmadoAsync(marcas.Select(m => m.Id), ct);
+            await _staging.MarcarConfirmadoAsync(marcas.Select(m => m.FundRequestId), ct);
         }
         catch (Exception ex)
         {

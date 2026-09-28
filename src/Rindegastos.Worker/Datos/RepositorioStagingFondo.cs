@@ -194,7 +194,7 @@ GROUP BY f.rgf_id_fondo;";
             marcas.Add(new MarcaIntegracionFondo
             {
                 Id = rd.GetInt64(0),
-                IntegrationStatus = 1,
+                IntegrationStatus = ConstantesMarcaIntegracion.Integrado,
                 IntegrationCode = rd.GetInt32(1).ToString(),
                 IntegrationDate = fecha.ToString("yyyy-MM-dd")
             });

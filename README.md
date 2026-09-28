@@ -64,14 +64,24 @@ del ERP (`sp_insert_mae_factura_boleta_1v2`, `sp_insert_mae_comprobante_contable
 `sp_insert_mae_detalle_comprobante_contable_1v2`), en el mismo orden y dentro de una
 única transacción. El resultado en la base de datos es idéntico a un ingreso manual.
 
-> **Cómo se marca en Rindegastos.** Los cuatro métodos `set...IntegrationBulk` reciben
-> un **objeto** con la lista adentro, no una lista suelta:
-> `{"Expenses":[...]}`, `{"ExpenseReports":[...]}`, `{"Funds":[...]}`,
-> `{"FundsRequest":[...]}`. Con la lista suelta la API contesta **HTTP 200 con el error
-> adentro** (`"property 0 should not exist"`, `"statusCode":400`). Hasta el 17/09/2026 el
-> worker lo tomaba como éxito, así que ninguna marca se había aplicado; ahora ese caso se
-> trata como error, y `sql\09_reenviar_marcas_integracion.sql` devolvió a estado 2 lo que
-> había quedado como confirmado para que se vuelva a mandar.
+> **Cómo se marca en Rindegastos.** Los cuatro métodos `set...IntegrationBulk` tienen tres
+> reglas que no están en la documentación y que costaron dos correcciones:
+>
+> 1. El cuerpo es un **objeto con la lista adentro**, no una lista suelta:
+>    `{"Expenses":[...]}`, `{"ExpenseReports":[...]}`, `{"Funds":[...]}`,
+>    `{"FundsRequest":[...]}`. Con la lista suelta responde
+>    `"property 0 should not exist"`, `"statusCode":400`.
+> 2. **`IntegrationStatus` va como texto** (`"1"`), no como número. Con número responde
+>    `{"statusCode":500,"message":"Internal server error"}` y no marca nada.
+> 3. En solicitudes de fondo la llave es **`FundRequestId`**, no `Id`. Es el único de los
+>    cuatro que cambia el nombre.
+>
+> Y en los tres casos la API contesta **HTTP 200 con el error adentro**. Hasta el
+> 24/09/2026 ninguna marca se había aplicado en ningún flujo; ahora ese cuerpo se trata
+> como error (el registro se queda en estado 2 y se reintenta), y
+> `sql\09_reenviar_marcas_integracion.sql` sirve para forzar el reenvío.
+>
+> Los cuatro métodos quedaron probados contra la API con registros reales el 24/09/2026.
 
 ---
 
@@ -86,10 +96,16 @@ RindegastosIntegracion\
 ├── ejecutar-una-vez.cmd          corre un ciclo y termina
 │
 ├── sql\                          scripts que TÚ ejecutas en SQL Server
-│   ├── 01_tablas_rg.sql          crea 3 tablas nuevas
+│   ├── 00_LEEME.sql              índice: qué hace cada script y cuándo se corre
+│   ├── 01_tablas_rg.sql          crea rg_gasto, rg_homologacion y rg_log_api
 │   ├── 02_homologaciones.sql     carga las equivalencias
 │   ├── 03_consultas_monitoreo.sql  catálogo de consultas para revisar
-│   └── 04_usuario_integracion.sql  crea el usuario del worker
+│   ├── 04_usuario_integracion.sql  crea el usuario del worker
+│   ├── 05_backfill_auditoria.sql   arreglo puntual, ya ejecutado
+│   ├── 06_tabla_rg_informe.sql     crea rg_informe (informes)
+│   ├── 07_tabla_rg_fondo.sql       crea rg_fondo (fondos)
+│   ├── 08_tabla_rg_solicitud_fondo.sql  crea rg_solicitud_fondo
+│   └── 09_reenviar_marcas_integracion.sql  arreglo puntual, ya ejecutado
 │
 └── src\                          "source": el código fuente
     └── Rindegastos.Worker\
@@ -136,8 +152,9 @@ Los servidores que aparecen en el `Web.config` del ERP:
 
 ### Antes de pasar a producción
 
-1. Ejecutar **los 4 scripts de `sql\`** en el servidor de producción. Las tablas `rg_*`,
-   las homologaciones y el usuario `rindegastos` existen solo en QA.
+1. Ejecutar **los 6 scripts de instalación de `sql\`** en el servidor de producción
+   (`00_LEEME.sql` los lista y los explica). Las tablas `rg_*`, las homologaciones y el
+   usuario `rindegastos` existen solo en QA.
 2. El `mus_cod_usuario` que genere producción **será distinto** al de QA: hay que
    actualizar `CodUsuarioErp`.
 3. Cambiar `BaseDatos:CadenaConexion`, preferentemente por variable de entorno:
@@ -155,24 +172,37 @@ Los servidores que aparecen en el `Web.config` del ERP:
 
 ## Paso 1 — Crear las tablas
 
+La carpeta `sql\` tiene **9 scripts**, pero no todos se ejecutan ni se ejecutan siempre.
+`sql\00_LEEME.sql` es el índice: dice qué hace cada uno, cuándo se corre, y trae al final
+una consulta que verifica que la instalación quedó completa.
+
 Abre **SQL Server Management Studio**, conéctate a `172.16.21.27`, base `bd_epysa_peru`,
-y ejecuta en este orden:
+y ejecuta **en este orden**:
 
-| Script | Qué hace |
+| # | Script | Qué hace |
+|---|---|---|
+| 1 | `sql\01_tablas_rg.sql` | Crea `rg_gasto`, `rg_homologacion` y `rg_log_api` |
+| 2 | `sql\02_homologaciones.sql` | Carga las equivalencias de tipo de documento y moneda |
+| 3 | `sql\04_usuario_integracion.sql` | Crea el usuario del worker (ver Paso 2) |
+| 4 | `sql\06_tabla_rg_informe.sql` | Crea `rg_informe`, del flujo de informes ⚠️ |
+| 5 | `sql\07_tabla_rg_fondo.sql` | Crea `rg_fondo`, del flujo de entrega de fondos ⚠️ |
+| 6 | `sql\08_tabla_rg_solicitud_fondo.sql` | Crea `rg_solicitud_fondo`, del flujo de solicitudes ⚠️ |
+
+⚠️ Esos tres tienen un índice filtrado: si los corres con `sqlcmd` en vez de SSMS, agrega
+el modificador **`-I`**.
+
+Los otros tres archivos **no** son de instalación:
+
+| Script | Cuándo se usa |
 |---|---|
-| `sql\01_tablas_rg.sql` | Crea `rg_gasto`, `rg_homologacion` y `rg_log_api` |
-| `sql\02_homologaciones.sql` | Carga las equivalencias de tipo de documento y moneda |
-| `sql\06_tabla_rg_informe.sql` | Crea `rg_informe`, del flujo de informes |
-| `sql\07_tabla_rg_fondo.sql` | Crea `rg_fondo`, del flujo de entrega de fondos |
-| `sql\08_tabla_rg_solicitud_fondo.sql` | Crea `rg_solicitud_fondo`, del flujo de solicitudes |
+| `sql\03_consultas_monitoreo.sql` | Nunca completo. Es el catálogo de consultas para revisar el día a día |
+| `sql\05_backfill_auditoria.sql` | Arreglo puntual, ya ejecutado el 03/09/2026 |
+| `sql\09_reenviar_marcas_integracion.sql` | Arreglo puntual, ya ejecutado el 18/09/2026. Sirve si hay que forzar el reenvío de las marcas a Rindegastos |
 
-Los tres últimos tienen un índice filtrado: si los corres con `sqlcmd` en vez de SSMS,
-agrega el modificador **`-I`**.
+**Ninguno modifica tablas del ERP.** Solo crean tablas nuevas con prefijo `rg_` y el
+usuario propio. Y son idempotentes: si los corres dos veces, la segunda no hace nada.
 
-**No modifican ninguna tabla existente del ERP.** Solo crean tablas nuevas con prefijo `rg_`.
-Y son idempotentes: si los corres dos veces, la segunda no hace nada.
-
-Verificación:
+Verificación (es la misma que trae `00_LEEME.sql` al final):
 
 ```sql
 SELECT name FROM sys.tables WHERE name LIKE 'rg_%';   -- debe devolver 6 filas
@@ -189,7 +219,7 @@ DROP TABLE dbo.rg_informe; DROP TABLE dbo.rg_fondo; DROP TABLE dbo.rg_solicitud_
 
 ## Paso 2 — Crear el usuario de la integración
 
-Ejecuta `sql\04_usuario_integracion.sql`.
+Ejecuta `sql\04_usuario_integracion.sql` (es el tercero de la lista del paso anterior).
 
 Crea un usuario llamado `rindegastos` en `mae_usuario` con perfil **173 (ASISTENTE
 CONTABLE)** y **sin contraseña**, así que no puede iniciar sesión en el ERP. Solo existe
@@ -440,15 +470,22 @@ monitoreo ni las alertas por correo, **hay que revisar la consulta A0 todos los 
 
 ### 9.1 Preparar la base de datos de producción
 
-Ejecutar en el servidor de producción, en este orden:
+Ejecutar en el servidor de producción **los mismos seis scripts de instalación** del
+Paso 1, en este orden (`sql\00_LEEME.sql` los lista con el detalle de cada uno):
 
-| Script | Qué crea |
-|---|---|
-| `sql\01_tablas_rg.sql` | `rg_gasto`, `rg_homologacion`, `rg_log_api` |
-| `sql\02_homologaciones.sql` | Equivalencias de tipo de documento y moneda |
-| `sql\04_usuario_integracion.sql` | El usuario `rindegastos` |
+| # | Script | Qué crea |
+|---|---|---|
+| 1 | `sql\01_tablas_rg.sql` | `rg_gasto`, `rg_homologacion`, `rg_log_api` |
+| 2 | `sql\02_homologaciones.sql` | Equivalencias de tipo de documento y moneda |
+| 3 | `sql\04_usuario_integracion.sql` | El usuario `rindegastos` |
+| 4 | `sql\06_tabla_rg_informe.sql` | `rg_informe` ⚠️ con `-I` si usas `sqlcmd` |
+| 5 | `sql\07_tabla_rg_fondo.sql` | `rg_fondo` ⚠️ |
+| 6 | `sql\08_tabla_rg_solicitud_fondo.sql` | `rg_solicitud_fondo` ⚠️ |
 
-Anota el `mus_cod_usuario` que devuelve el último: **será distinto al de QA**.
+Los scripts `05` y `09` son arreglos puntuales de QA: **no se ejecutan en producción**.
+
+Anota el `mus_cod_usuario` que devuelve el tercero: **será distinto al de QA**. Y corre
+la verificación del final de `00_LEEME.sql` para confirmar que quedaron las 6 tablas.
 
 Antes de continuar, verifica que los catálogos de producción tengan lo que la
 integración necesita — pueden diferir de QA:
@@ -567,7 +604,8 @@ El servicio no relee las variables de entorno en caliente: hay que reiniciarlo.
 
 ### Checklist de puesta en marcha
 
-- [ ] Los 3 scripts SQL ejecutados en producción
+- [ ] Los 6 scripts SQL de instalación ejecutados en producción (ver `sql\00_LEEME.sql`)
+- [ ] Verificación del final de `00_LEEME.sql`: 6 tablas y el usuario creados
 - [ ] `mus_cod_usuario` de producción anotado y configurado
 - [ ] Centros de costo y cuentas verificados en producción
 - [ ] Programa publicado y copiado, **sin** `appsettings.Local.json`
@@ -944,6 +982,33 @@ ser **otra persona**. Verificado en el comprobante 2606225: la planilla es de Ka
 Pereda (DNI 73833161) y la contrapartida quedó igual a nombre de Hiroshi (73026091), que
 fue quien envió el informe.
 
+### Informes que rinden un fondo
+
+Cuando el informe trae `FundId` está liquidando un fondo (una caja chica, o el dinero de
+una solicitud de viáticos ya entregada). En ese caso, en **entrega a rendir y viáticos**
+el número de la contrapartida es el **Id del fondo** en vez de la fecha, así la
+transferencia que entregó el dinero y la rendición que lo justifica quedan con el mismo
+número:
+
+```
+informe 14076153 "RENDICION VIATICOS AREQUIPA"  FundId 944229
+  1413110  analisis=empleado  td=26  num=944229   abono 254.00
+```
+
+**Reembolso y caja chica conservan su correlativo**, aunque el informe traiga fondo:
+
+| Tipo de rendición | Sin fondo | Con fondo `944229` |
+|---|---|---|
+| Entrega a rendir | `25092026` | **`944229`** |
+| Viáticos | `25092026` | **`944229`** |
+| Reembolso | `0910202606` | `0910202606` |
+| Caja chica | `2026-0006` | `2026-0006` |
+
+En caja chica el número es la secuencia anual de la persona, y así lo registra
+Contabilidad a mano incluso cuando el informe liquida un fondo (comprobante 2606263,
+fondo 939964, número `2026-0003`). En reembolso, el número agrupa los pagos de un mismo
+viernes.
+
 **No duplicar lo que se registró a mano.** Además del candado por documento, antes de
 grabar se busca un comprobante con la misma glosa, tipo, cuenta de contrapartida y monto.
 
@@ -956,7 +1021,7 @@ El campo extra `Tipo de rendición` del **informe** decide todo:
 
 | Tipo de rendición | Tipo de comprobante | Contrapartida en soles | Contrapartida en dólares | Número de documento |
 |---|---|---|---|---|
-| Entrega a rendir | 17 Diario | `1413110` Entregas a Rendir Cta M.N. | `1413010` Entregas a Rendir Cuenta ME ⚠️ | `ddMMyyyy` del día de registro |
+| Entrega a rendir | 17 Diario | `1413110` Entregas a Rendir Cta M.N. | `1413010` Entregas a Rendir Cuenta ME ⚠️ | `ddMMyyyy` del día de registro, o el **Id del fondo** si el informe rinde uno |
 | Viáticos | 17 Diario | `1413110` Entregas a Rendir Cta M.N. | `1413010` Entregas a Rendir Cuenta ME ⚠️ | `ddMMyyyy` del día de registro |
 | Reembolso | 17 Diario | `4699210` Otras Ctas por Pagar Diversas MN | `4699220` Otras Ctas por Pagar Diversas ME | `ddMMyyyy` del viernes + correlativo |
 | Caja Chica | 2 Caja Egreso | `4690210` Ctas por Pagar Cajas Chicas MN | `4690215` Ctas por Pagar Cajas Chicas ME | `aaaa-nnnn` |
@@ -1189,6 +1254,10 @@ tipo 19, folio 7, glosa "TR-7 LILIAN JOSE - VIATICOS PIURA"
 - **Las dos políticas se registran igual** (`Solicitudes de Fondos - Viáticos` y
   `Solicitudes de Fondos - Entrega por rendir`): ambas van a `1413110`, o a `1413010`
   si fueran en dólares.
+- **El número de documento es el `Id` del fondo** que Rindegastos crea al aprobar la
+  solicitud (por ejemplo `943478`), no la fecha. Así la transferencia queda enlazada con
+  el fondo que después se liquida. En la entrega de un fondo directo (flujo 3) el número
+  sigue siendo la fecha del depósito.
 - **Quién recibe el dinero:** el campo extra **`DNI`** de la solicitud. Las solicitudes
   viejas no lo traen (el campo se agregó después) y quedan en error, a la vista en la
   consulta **S1**.

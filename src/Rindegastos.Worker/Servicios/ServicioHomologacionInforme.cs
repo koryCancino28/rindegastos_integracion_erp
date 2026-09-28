@@ -234,8 +234,11 @@ public sealed class ServicioHomologacionInforme
             _ => 1
         };
 
+        // Si el informe rinde un fondo, en entrega a rendir y viaticos el numero es
+        // el Id de ese fondo en vez de la fecha: deja la transferencia que entrego
+        // el dinero y la rendicion que lo justifica con el mismo numero.
         var numeroDocumento = CalculadorDocumentoRendicion.NumeroDocumento(
-            regla, fechaContabilizacion, vencimiento, correlativo);
+            regla, fechaContabilizacion, vencimiento, correlativo, informe.FundId);
 
         var resultado = new InformeHomologado
         {

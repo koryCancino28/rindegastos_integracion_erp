@@ -308,7 +308,7 @@ WHERE rgi_estado = @estado AND rgi_cod_comprobante IS NOT NULL;";
             pendientes.Add((new MarcaIntegracionInforme
             {
                 Id = rd.GetInt64(0),
-                IntegrationStatus = 1,
+                IntegrationStatus = ConstantesMarcaIntegracion.Integrado,
                 IntegrationCode = rd.GetInt32(1).ToString(),
                 IntegrationDate = fecha.ToString("yyyy-MM-dd")
             }, idsGastos));

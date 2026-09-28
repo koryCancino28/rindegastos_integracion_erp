@@ -11,7 +11,7 @@
      0 = DESCARGADO     llego de Rindegastos, aun no se traduce
      1 = HOMOLOGADO     listo para contabilizar
      2 = CONTABILIZADO  ya existe el comprobante, falta avisar a Rindegastos
-     3 = CONFIRMADO     terminado
+     3 = CONFIRMADO     terminadof
      9 = ERROR          necesita que alguien lo revise
    ============================================================================= */
 

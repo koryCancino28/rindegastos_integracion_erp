@@ -1,3 +1,4 @@
+.vs/
 bin/
 obj/
 logs/
@@ -7,3 +8,4 @@ appsettings.Production.json
 
 # Datos sensibles: token de Rindegastos, cadenas de conexion.
 appsettings.Local.json
+appsettings.json

@@ -152,8 +152,18 @@ public sealed class ServicioHomologacionSolicitud
             Monto = solicitud.Amount,
             CodMoneda = codMoneda!.Value,
             TipoCambio = tipoCambio,
-            FechaDeposito = fecha
+            FechaDeposito = fecha,
+
+            // En una solicitud el numero de documento es el Id del FONDO que
+            // Rindegastos crea al aprobarla, no la fecha: asi la transferencia
+            // queda enlazada con el fondo que despues se liquida.
+            NumeroDocumentoFondo = solicitud.FundId?.ToString() ?? ""
         };
+
+        if (solicitud.FundId is null)
+            _logger.LogWarning(
+                "Solicitud {Id}: no trae FundId, asi que el numero de documento queda con la fecha ({Numero}).",
+                solicitud.Id, resultado.NumeroDocumentoFondo);
 
         // ---- Ya registrada a mano ---------------------------------------------------
         var existente = await _catalogo.BuscarTransferenciaFondoExistenteAsync(
