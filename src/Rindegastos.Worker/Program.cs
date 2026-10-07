@@ -10,10 +10,14 @@ using Rindegastos.Worker.Servicios;
 using Serilog;
 
 // -------------------------------------------------------------------- Serilog
+// La carpeta logs se arma junto al ejecutable, no en el directorio de trabajo.
+// Como servicio de Windows el directorio de trabajo es C:\Windows\System32, y
+// con una ruta relativa los logs terminarian en C:\Windows\System32\logs.
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-    .WriteTo.File("logs/rindegastos-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30)
+    .WriteTo.File(Path.Combine(AppContext.BaseDirectory, "logs", "rindegastos-.log"),
+        rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30)
     .CreateLogger();
 
 try

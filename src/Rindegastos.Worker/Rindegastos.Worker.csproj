@@ -25,10 +25,15 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Datos sensibles (token). No se sube a git: esta en .gitignore. -->
-    <None Update="appsettings.Local.json">
+    <!-- Datos sensibles (token). No se sube a git: esta en .gitignore.
+         Se copia al compilar (desarrollo) pero NO al publicar: el servidor tiene
+         su propio appsettings.Local.json con los datos de produccion, y asi una
+         nueva publicacion no lo pisa con el token y la conexion de QA. -->
+    <!-- El SDK Worker lo trata como Content, por eso se ajusta ese item. -->
+    <Content Update="appsettings.Local.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>
