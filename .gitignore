@@ -1,7 +1,8 @@
-.vs/
+﻿.vs/
 bin/
 obj/
 logs/
+log-rindegastos/
 *.user
 appsettings.Development.json
 appsettings.Production.json

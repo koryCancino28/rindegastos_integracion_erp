@@ -348,7 +348,7 @@ Doble clic en **`ejecutar-una-vez.cmd`**. Corre un ciclo y termina.
 [11:26:34 WRN] MODO SOLO LECTURA: no se contabiliza nada.
 ```
 
-Los logs también quedan en `src\Rindegastos.Worker\logs\rindegastos-AAAA-MM-DD.log`.
+Los logs también quedan en `src\Rindegastos.Worker\bin\Debug\net8.0\log-rindegastos\rindegastos-AAAAMMDD.log`.
 
 ### Las dos formas de ejecutarlo
 
@@ -582,11 +582,11 @@ sc.exe stop RindegastosIntegracion
 sc.exe delete RindegastosIntegracion
 ```
 
-Los logs quedan en `C:\Servicios\RindegastosIntegracion\logs\rindegastos-AAAA-MM-DD.log`
+Los logs quedan en `C:\Servicios\RindegastosIntegracion\log-rindegastos\rindegastos-AAAAMMDD.log`
 (30 días) y en la tabla `rg_log_api`.
 
 > La cuenta con la que corre el servicio necesita **permiso de escritura** en esa
-> carpeta de logs.
+> carpeta `log-rindegastos`.
 
 ### 9.6 Activar la escritura
 
@@ -613,7 +613,7 @@ El servicio no relee las variables de entorno en caliente: hay que reiniciarlo.
 - [ ] El servidor tiene salida a `api.rindegastos.com`
 - [ ] Prueba `--una-vez` en modo solo lectura, limpia
 - [ ] Servicio instalado y arrancando solo tras reiniciar el servidor
-- [ ] Permisos de escritura en la carpeta `logs`
+- [ ] Permisos de escritura en la carpeta `log-rindegastos`
 - [ ] Contabilidad sabe que debe revisar A0 a diario
 - [ ] Definido quién resuelve los gastos en estado 9
 

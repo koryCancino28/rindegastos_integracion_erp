@@ -10,13 +10,13 @@ using Rindegastos.Worker.Servicios;
 using Serilog;
 
 // -------------------------------------------------------------------- Serilog
-// La carpeta logs se arma junto al ejecutable, no en el directorio de trabajo.
-// Como servicio de Windows el directorio de trabajo es C:\Windows\System32, y
-// con una ruta relativa los logs terminarian en C:\Windows\System32\logs.
+// La carpeta log-rindegastos se arma junto al ejecutable, no en el directorio de
+// trabajo. Como servicio de Windows el directorio de trabajo es C:\Windows\System32,
+// y con una ruta relativa los logs terminarian ahi.
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-    .WriteTo.File(Path.Combine(AppContext.BaseDirectory, "logs", "rindegastos-.log"),
+    .WriteTo.File(Path.Combine(AppContext.BaseDirectory, "log-rindegastos", "rindegastos-.log"),
         rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30)
     .CreateLogger();
 
@@ -186,6 +186,12 @@ static void ValidarConfiguracion(IServiceProvider servicios)
         throw new InvalidOperationException(
             "Integracion:CodUsuarioErp es obligatorio cuando SoloLectura es false. " +
             "Debe ser un mae_usuario.mus_cod_usuario valido.");
+
+    // A que base apunta y con que usuario graba: es lo primero que hay que mirar
+    // al instalar en un servidor. Solo servidor y base, nunca la contrasena.
+    var cadena = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(bd.CadenaConexion);
+    Log.Information("Base de datos: {Servidor} / {Base}. CodUsuarioErp: {Usuario}",
+        cadena.DataSource, cadena.InitialCatalog, it.CodUsuarioErp);
 
     Log.Information("Configuracion validada. Modo solo lectura: {Modo}", it.SoloLectura);
 }
